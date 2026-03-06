@@ -1,0 +1,142 @@
+{
+  "projectType": "saas",
+  "projectName": "ERPNext",
+  "projectDescription": "Free and open-source Enterprise Resource Planning system to help businesses manage operations, finances, inventory, manufacturing, and more.",
+  "theme": "linden",
+  "primaryColor": "#141414",
+  "lightColor": "#7c7c7c",
+  "darkColor": "#c8c8c8",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Core Modules",
+            "pages": [
+              "modules/accounting",
+              "modules/buying",
+              "modules/selling",
+              "modules/stock",
+              "modules/manufacturing",
+              "modules/projects",
+              "modules/crm",
+              "modules/assets",
+              "modules/support"
+            ]
+          },
+          {
+            "group": "Setup & Configuration",
+            "pages": [
+              "setup/company",
+              "setup/users",
+              "setup/settings",
+              "setup/customization"
+            ]
+          },
+          {
+            "group": "Features",
+            "pages": [
+              "features/reporting",
+              "features/integrations",
+              "features/automation",
+              "features/regional"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "api/overview",
+              "api/authentication"
+            ]
+          },
+          {
+            "group": "Core APIs",
+            "pages": [
+              "api/document",
+              "api/database",
+              "api/utils"
+            ]
+          },
+          {
+            "group": "Module APIs",
+            "pages": [
+              "api/accounts",
+              "api/stock",
+              "api/manufacturing"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Developer Guide",
+        "groups": [
+          {
+            "group": "Development",
+            "pages": [
+              "developers/architecture",
+              "developers/doctype",
+              "developers/hooks",
+              "developers/testing"
+            ]
+          },
+          {
+            "group": "Customization",
+            "pages": [
+              "developers/custom-app",
+              "developers/fixtures",
+              "developers/regional-overrides"
+            ]
+          },
+          {
+            "group": "Contributing",
+            "pages": [
+              "developers/contributing",
+              "developers/code-style"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Financial Accounting & Reporting",
+    "Inventory & Stock Management",
+    "Order Management (Sales & Purchase)",
+    "Manufacturing & Bill of Materials",
+    "Project Management & Timesheet Tracking",
+    "Customer Relationship Management (CRM)",
+    "Asset Lifecycle Management",
+    "Human Resources Management",
+    "Point of Sale (POS)",
+    "Multi-currency & Regional Support"
+  ],
+  "publicApiSurface": [
+    "frappe.client.get",
+    "frappe.client.get_list",
+    "frappe.client.insert",
+    "frappe.client.update",
+    "frappe.client.delete",
+    "erpnext.accounts.doctype.payment_entry.payment_entry.get_payment_entry",
+    "erpnext.stock.get_item_details.get_item_details",
+    "erpnext.selling.doctype.sales_order.sales_order.make_sales_invoice",
+    "erpnext.buying.doctype.purchase_order.purchase_order.make_purchase_receipt",
+    "erpnext.manufacturing.doctype.work_order.work_order.make_stock_entry",
+    "erpnext.get_default_company",
+    "erpnext.get_default_currency",
+    "erpnext.get_company_currency"
+  ]
+}
