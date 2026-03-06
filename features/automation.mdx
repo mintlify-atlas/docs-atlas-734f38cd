@@ -1,0 +1,520 @@
+---
+title: Automation Features
+description: Automate business processes, workflows, and notifications in ERPNext
+---
+
+ERPNext provides comprehensive automation tools to streamline business operations, reduce manual work, and ensure consistency across processes.
+
+## Workflow Automation
+
+Define multi-step approval processes with custom rules and conditions.
+
+### Creating Workflows
+
+<Steps>
+  <Step title="Define Workflow">
+    Navigate to Setup > Workflow > Workflow
+    
+    ```python
+    workflow = frappe.get_doc({
+        "doctype": "Workflow",
+        "workflow_name": "Sales Order Approval",
+        "document_type": "Sales Order",
+        "is_active": 1,
+        "workflow_state_field": "workflow_state"
+    })
+    ```
+  </Step>
+  
+  <Step title="Add States">
+    Define the stages your document goes through:
+    
+    - Draft → Pending Approval → Approved → Rejected
+    - Each state can have different allowed roles
+    - Set colors for visual indication
+  </Step>
+  
+  <Step title="Configure Transitions">
+    Define allowed transitions between states:
+    
+    ```python
+    transition = {
+        "state": "Draft",
+        "action": "Submit for Approval",
+        "next_state": "Pending Approval",
+        "allowed": "Sales User",
+        "condition": "doc.grand_total > 10000"
+    }
+    ```
+  </Step>
+  
+  <Step title="Set Conditions">
+    Add business rules:
+    
+    ```python
+    # Condition examples
+    "doc.grand_total > 100000"  # Amount threshold
+    "doc.customer_group == 'VIP'"  # Customer category
+    "doc.territory in ['North', 'South']"  # Geographic rules
+    ```
+  </Step>
+</Steps>
+
+### Workflow Actions
+
+<CardGroup cols={2}>
+  <Card title="Approval" icon="check">
+    Route documents through approval hierarchy based on amount, department, or custom criteria.
+  </Card>
+  <Card title="Rejection" icon="xmark">
+    Send back to previous state with comments and reasons.
+  </Card>
+  <Card title="Conditional Routing" icon="code-branch">
+    Automatic routing based on field values or calculations.
+  </Card>
+  <Card title="Parallel Approval" icon="users">
+    Multiple approvers can review simultaneously.
+  </Card>
+</CardGroup>
+
+## Scheduled Events
+
+Automate recurring tasks using the scheduler:
+
+<CodeGroup>
+```python Hourly Tasks
+# hooks.py - Register scheduled events
+scheduler_events = {
+    "hourly": [
+        "erpnext.projects.doctype.project.project.hourly_reminder"
+    ],
+    "hourly_long": [
+        "erpnext.stock.doctype.repost_item_valuation.repost_item_valuation.repost_entries"
+    ],
+    "hourly_maintenance": [
+        "erpnext.utilities.bulk_transaction.retry",
+        "erpnext.projects.doctype.project.project.collect_project_status"
+    ]
+}
+```
+
+```python Daily Tasks
+scheduler_events = {
+    "daily": [
+        "erpnext.stock.reorder_item.reorder_item",
+        "erpnext.setup.doctype.email_digest.email_digest.send",
+        "erpnext.accounts.doctype.process_deferred_accounting.process_deferred_accounting.process"
+    ],
+    "daily_long": [
+        "erpnext.stock.doctype.repost_item_valuation.repost_item_valuation.run_parallel_reposting"
+    ]
+}
+```
+
+```python Cron Expressions
+scheduler_events = {
+    "cron": {
+        # Every 15 minutes
+        "0/15 * * * *": [
+            "erpnext.manufacturing.doctype.bom_update_log.bom_update_log.resume_bom_cost_update_jobs"
+        ],
+        # Every 30 minutes
+        "0/30 * * * *": [
+            "erpnext.stock.doctype.repost_item_valuation.repost_item_valuation.run_parallel_reposting"
+        ],
+        # Every hour at :30
+        "30 * * * *": [
+            "erpnext.accounts.doctype.gl_entry.gl_entry.rename_gle_sle_docs"
+        ],
+        # Daily at 00:45
+        "45 0 * * *": [
+            "your_app.tasks.daily_cleanup"
+        ]
+    }
+}
+```
+</CodeGroup>
+
+### Common Scheduled Tasks
+
+<Accordion title="Stock Reorder">
+  Automatically create Purchase Requests when inventory falls below reorder level:
+  
+  ```python
+  def reorder_item():
+      items = frappe.db.sql("""
+          SELECT item_code, warehouse, reorder_level, reorder_qty
+          FROM `tabItem Reorder`
+          WHERE enabled = 1
+      """, as_dict=1)
+      
+      for item in items:
+          current_qty = get_stock_qty(item.item_code, item.warehouse)
+          if current_qty < item.reorder_level:
+              create_material_request(item)
+  ```
+</Accordion>
+
+<Accordion title="Payment Reminders">
+  Send automated reminders for overdue invoices:
+  
+  ```python
+  def send_payment_reminders():
+      overdue_invoices = frappe.db.sql("""
+          SELECT name, customer, due_date, outstanding_amount
+          FROM `tabSales Invoice`
+          WHERE docstatus = 1 
+            AND outstanding_amount > 0
+            AND due_date < CURDATE()
+      """, as_dict=1)
+      
+      for invoice in overdue_invoices:
+          send_reminder_email(invoice)
+  ```
+</Accordion>
+
+<Accordion title="Data Cleanup">
+  Archive old records and clean up temporary data:
+  
+  ```python
+  def cleanup_old_logs():
+      # Delete old activity logs
+      frappe.db.sql("""
+          DELETE FROM `tabActivity Log`
+          WHERE creation < DATE_SUB(NOW(), INTERVAL 90 DAY)
+      """)
+      
+      # Archive old documents
+      old_docs = frappe.get_all(
+          "Sales Order",
+          filters={"creation": ["<", "2020-01-01"]},
+          pluck="name"
+      )
+      for doc in old_docs:
+          archive_document("Sales Order", doc)
+  ```
+</Accordion>
+
+## Email Automation
+
+### Email Alerts
+
+Trigger emails based on document events:
+
+```python
+# Setup > Email > Email Alert
+email_alert = frappe.get_doc({
+    "doctype": "Email Alert",
+    "subject": "New Sales Order: {{ doc.name }}",
+    "document_type": "Sales Order",
+    "event": "Submit",
+    "send_to_all_assignees": 1,
+    "recipients": [
+        {"email_by_document_field": "sales_manager_email"}
+    ],
+    "condition": "doc.grand_total > 50000",
+    "message": """
+        <p>A new high-value order has been placed:</p>
+        <ul>
+            <li>Customer: {{ doc.customer }}</li>
+            <li>Amount: {{ doc.grand_total }}</li>
+            <li>Delivery Date: {{ doc.delivery_date }}</li>
+        </ul>
+    """
+})
+email_alert.insert()
+```
+
+**Trigger Events:**
+- New document created
+- Document saved
+- Document submitted
+- Document cancelled
+- Value changed (specific field)
+- Days before/after date field
+- Custom conditions
+
+### Email Campaigns
+
+Automated marketing campaigns:
+
+<CodeGroup>
+```python Campaign Setup
+# CRM > Email Campaign
+campaign = frappe.get_doc({
+    "doctype": "Email Campaign",
+    "name": "Lead Nurture Series",
+    "campaign_name": "Product Launch",
+    "email_campaign_for": "Lead",
+    "sender": "sales@company.com",
+    "status": "Active"
+})
+
+# Add email schedules
+campaign.append("campaign_schedules", {
+    "send_after_days": 0,
+    "email_template": "Welcome Email"
+})
+campaign.append("campaign_schedules", {
+    "send_after_days": 3,
+    "email_template": "Feature Introduction"
+})
+campaign.append("campaign_schedules", {
+    "send_after_days": 7,
+    "email_template": "Special Offer"
+})
+campaign.insert()
+```
+
+```python Unsubscribe Handling
+# Automatic unsubscribe handling
+def unsubscribe_recipient(doc, method):
+    if doc.reference_doctype == "Email Campaign":
+        # Mark lead as unsubscribed
+        lead = frappe.get_doc("Lead", doc.reference_name)
+        lead.unsubscribed = 1
+        lead.add_comment("Comment", "Unsubscribed from email campaign")
+        lead.save()
+```
+</CodeGroup>
+
+## Auto-Repeat (Subscriptions)
+
+Automate recurring transactions:
+
+```python
+# Create auto-repeat for monthly invoices
+auto_repeat = frappe.get_doc({
+    "doctype": "Auto Repeat",
+    "reference_doctype": "Sales Invoice",
+    "reference_document": "SINV-00001",
+    "frequency": "Monthly",
+    "start_date": "2024-01-01",
+    "end_date": "2024-12-31",
+    "repeat_on_day": 1,  # 1st of each month
+    "notify_by_email": 1,
+    "recipients": "customer@example.com",
+    "submit_on_creation": 1
+})
+auto_repeat.insert()
+```
+
+**Use Cases:**
+- Monthly subscriptions
+- Recurring rentals
+- Annual maintenance contracts
+- Periodic purchase orders
+- Regular salary payments
+
+## Document Events & Hooks
+
+Trigger custom code on document lifecycle events:
+
+<CodeGroup>
+```python Standard Events
+# hooks.py
+doc_events = {
+    "Sales Invoice": {
+        "before_insert": "your_app.custom.validate_customer",
+        "after_insert": "your_app.custom.notify_sales_team",
+        "before_save": "your_app.custom.calculate_commission",
+        "on_submit": "your_app.custom.update_inventory",
+        "on_cancel": "your_app.custom.reverse_inventory",
+        "on_trash": "your_app.custom.cleanup_related_docs"
+    }
+}
+```
+
+```python Custom Validation
+# Custom validation logic
+def validate_customer(doc, method):
+    if doc.customer:
+        customer = frappe.get_doc("Customer", doc.customer)
+        
+        # Check credit limit
+        if customer.credit_limit > 0:
+            outstanding = get_customer_outstanding(doc.customer)
+            if outstanding + doc.grand_total > customer.credit_limit:
+                frappe.throw(f"Credit limit exceeded for {doc.customer}")
+        
+        # Check if customer is active
+        if customer.disabled:
+            frappe.throw(f"Customer {doc.customer} is disabled")
+```
+
+```python Field Updates
+# Update fields based on other fields
+def before_save_handler(doc, method):
+    # Auto-calculate discount
+    if doc.customer_group == "Wholesale":
+        doc.additional_discount_percentage = 10
+    
+    # Set due date based on payment terms
+    if doc.payment_terms_template:
+        doc.due_date = add_days(doc.posting_date, 30)
+    
+    # Update status based on conditions
+    if doc.outstanding_amount == 0:
+        doc.status = "Paid"
+    elif doc.due_date < today():
+        doc.status = "Overdue"
+```
+</CodeGroup>
+
+## Assignment Automation
+
+Auto-assign documents to users:
+
+```python
+# Setup > Automation > Assignment Rule
+assignment_rule = frappe.get_doc({
+    "doctype": "Assignment Rule",
+    "name": "Auto Assign Leads",
+    "document_type": "Lead",
+    "assign_condition": "doc.status == 'Open'",
+    "rule": "Round Robin",  # or "Load Balancing", "Based on Field"
+    "users": [
+        {"user": "sales1@company.com"},
+        {"user": "sales2@company.com"},
+        {"user": "sales3@company.com"}
+    ]
+})
+assignment_rule.insert()
+```
+
+**Assignment Strategies:**
+- **Round Robin**: Distribute evenly in rotation
+- **Load Balancing**: Assign to user with fewest open documents
+- **Based on Field**: Assign based on territory, department, etc.
+- **Priority Based**: Assign high-priority items to specific users
+
+## Notification Automation
+
+<CardGroup cols={2}>
+  <Card title="System Notifications" icon="bell">
+    In-app notifications for document assignments, mentions, and updates.
+  </Card>
+  <Card title="SMS Alerts" icon="mobile">
+    Send SMS for critical events like payment confirmations.
+  </Card>
+  <Card title="Push Notifications" icon="paper-plane">
+    Mobile app notifications for mobile users.
+  </Card>
+  <Card title="Slack/Teams" icon="hashtag">
+    Integration with team collaboration tools.
+  </Card>
+</CardGroup>
+
+## Bank Reconciliation Automation
+
+Automatic matching of bank transactions:
+
+```python
+# accounts/doctype/bank_transaction/auto_match_party.py
+def auto_match_party():
+    # Get unreconciled transactions
+    transactions = frappe.get_all(
+        "Bank Transaction",
+        filters={"status": "Unreconciled"},
+        fields=["name", "description", "withdrawal", "deposit"]
+    )
+    
+    for transaction in transactions:
+        # Try to match with invoices
+        matches = find_matching_invoices(transaction)
+        
+        if len(matches) == 1:
+            # Auto-reconcile if single match
+            reconcile_transaction(transaction, matches[0])
+```
+
+## API Webhooks
+
+Trigger external systems when documents change:
+
+```python
+# Setup > Integrations > Webhook
+webhook = frappe.get_doc({
+    "doctype": "Webhook",
+    "webhook_doctype": "Sales Order",
+    "webhook_docevent": "on_submit",
+    "request_url": "https://api.external-system.com/order-created",
+    "request_method": "POST",
+    "request_structure": "Form URL-Encoded",
+    "webhook_headers": [
+        {"key": "Authorization", "value": "Bearer TOKEN"},
+        {"key": "Content-Type", "value": "application/json"}
+    ],
+    "webhook_data": [
+        {"fieldname": "name", "key": "order_id"},
+        {"fieldname": "customer", "key": "customer_name"},
+        {"fieldname": "grand_total", "key": "total_amount"}
+    ]
+})
+webhook.insert()
+```
+
+## Server Scripts
+
+Write custom automation without deploying apps:
+
+```javascript
+// Setup > Automation > Server Script
+// Script Type: DocType Event
+// DocType: Sales Order
+// Event: Before Save
+
+if (doc.customer) {
+    let customer = frappe.get_doc("Customer", doc.customer);
+    
+    // Apply customer-specific discount
+    if (customer.discount_percentage) {
+        doc.additional_discount_percentage = customer.discount_percentage;
+    }
+    
+    // Set payment terms
+    if (customer.payment_terms) {
+        doc.payment_terms_template = customer.payment_terms;
+    }
+}
+```
+
+## Best Practices
+
+<Note>
+  **Automation Guidelines**
+  
+  - Test automations in staging before production
+  - Use error handling and logging
+  - Avoid infinite loops in document events
+  - Set appropriate permissions for automated actions
+  - Monitor automated jobs for failures
+  - Use queues for long-running tasks
+  - Document all automation rules
+</Note>
+
+<CardGroup cols={2}>
+  <Card title="Performance">
+    - Use background jobs for bulk operations
+    - Implement rate limiting
+    - Cache frequently accessed data
+    - Optimize database queries
+  </Card>
+  <Card title="Reliability">
+    - Add retry logic with exponential backoff
+    - Log all automation activities
+    - Send failure notifications
+    - Use dead letter queues
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Reporting" icon="chart-line" href="/features/reporting">
+    Automate report generation and distribution
+  </Card>
+  <Card title="Integrations" icon="plug" href="/features/integrations">
+    Connect with external systems
+  </Card>
+</CardGroup>

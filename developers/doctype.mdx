@@ -1,0 +1,526 @@
+---
+title: DocType Development
+description: Creating and customizing DocTypes in ERPNext
+---
+
+DocTypes are the fundamental building blocks in ERPNext. They define data models, business logic, and user interfaces. Every document in ERPNext (Sales Order, Item, Customer, etc.) is a DocType.
+
+## Understanding DocTypes
+
+A DocType consists of three main components:
+
+<CardGroup cols={3}>
+  <Card title="Metadata" icon="file-code">
+    JSON file defining fields, permissions, and behavior
+  </Card>
+  
+  <Card title="Controller" icon="python">
+    Python class containing business logic
+  </Card>
+  
+  <Card title="Client Script" icon="js">
+    JavaScript for form interactions
+  </Card>
+</CardGroup>
+
+## Creating a DocType
+
+<Steps>
+  <Step title="Generate DocType via UI">
+    Navigate to **Developer > DocType > New**. This creates the metadata file and boilerplate code.
+  </Step>
+  
+  <Step title="Define Fields">
+    Add fields with appropriate field types (Data, Link, Table, Select, etc.).
+  </Step>
+  
+  <Step title="Set Naming">
+    Configure how documents are named (auto-increment, naming series, field-based).
+  </Step>
+  
+  <Step title="Configure Permissions">
+    Define role-based permissions for Create, Read, Write, Submit, Cancel, Delete.
+  </Step>
+  
+  <Step title="Add Business Logic">
+    Implement validation and automation in the Python controller.
+  </Step>
+</Steps>
+
+## DocType Structure Example
+
+### Metadata (JSON)
+
+Let's examine a real DocType from ERPNext:
+
+```json
+// erpnext/selling/doctype/sales_order/sales_order.json
+{
+  "doctype": "DocType",
+  "name": "Sales Order",
+  "autoname": "naming_series:",
+  "is_submittable": 1,
+  "editable_grid": 1,
+  "fields": [
+    {
+      "fieldname": "customer",
+      "fieldtype": "Link",
+      "options": "Customer",
+      "reqd": 1,
+      "label": "Customer"
+    },
+    {
+      "fieldname": "transaction_date",
+      "fieldtype": "Date",
+      "reqd": 1,
+      "label": "Date",
+      "default": "Today"
+    },
+    {
+      "fieldname": "items",
+      "fieldtype": "Table",
+      "options": "Sales Order Item",
+      "label": "Items"
+    }
+  ],
+  "permissions": [
+    {
+      "role": "Sales User",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "submit": 1
+    }
+  ]
+}
+```
+
+### Controller (Python)
+
+```python
+# erpnext/selling/doctype/sales_order/sales_order.py
+from erpnext.controllers.selling_controller import SellingController
+import frappe
+from frappe import _
+from frappe.utils import flt, getdate
+
+class SalesOrder(SellingController):
+    # Type hints for IDE support (auto-generated)
+    from typing import TYPE_CHECKING
+    if TYPE_CHECKING:
+        from frappe.types import DF
+        customer: DF.Link
+        transaction_date: DF.Date
+        items: DF.Table
+    
+    def validate(self):
+        """Called before save"""
+        super().validate()
+        self.validate_delivery_date()
+        self.calculate_totals()
+        self.check_credit_limit()
+    
+    def validate_delivery_date(self):
+        """Ensure delivery date is after transaction date"""
+        if self.delivery_date and getdate(self.delivery_date) < getdate(self.transaction_date):
+            frappe.throw(_("Delivery Date cannot be before Transaction Date"))
+    
+    def calculate_totals(self):
+        """Calculate order totals"""
+        self.total_qty = sum(flt(item.qty) for item in self.items)
+        self.total = sum(flt(item.amount) for item in self.items)
+    
+    def on_submit(self):
+        """Called after document is submitted"""
+        super().on_submit()
+        self.update_stock_reservation()
+        self.update_blanket_order()
+    
+    def on_cancel(self):
+        """Called when document is cancelled"""
+        super().on_cancel()
+        self.cancel_stock_reservation()
+    
+    def update_stock_reservation(self):
+        """Reserve stock for this order"""
+        if self.reserve_stock:
+            for item in self.items:
+                # Business logic for stock reservation
+                pass
+
+# Whitelisted methods (callable from client)
+@frappe.whitelist()
+def make_sales_invoice(source_name):
+    """Create Sales Invoice from Sales Order"""
+    from frappe.model.mapper import get_mapped_doc
+    
+    def update_item(source, target, parent):
+        target.qty = source.qty - source.billed_qty
+    
+    doc = get_mapped_doc(
+        "Sales Order",
+        source_name,
+        {
+            "Sales Order": {
+                "doctype": "Sales Invoice"
+            },
+            "Sales Order Item": {
+                "doctype": "Sales Invoice Item",
+                "postprocess": update_item
+            }
+        }
+    )
+    return doc
+```
+
+### Client Script (JavaScript)
+
+```javascript
+// erpnext/selling/doctype/sales_order/sales_order.js
+frappe.ui.form.on('Sales Order', {
+    // Form load event
+    onload: function(frm) {
+        // Set query filters for Link fields
+        frm.set_query('customer', function() {
+            return {
+                filters: {
+                    'disabled': 0
+                }
+            };
+        });
+    },
+    
+    // Field change event
+    customer: function(frm) {
+        if (frm.doc.customer) {
+            // Fetch customer details
+            frappe.call({
+                method: 'erpnext.selling.doctype.sales_order.sales_order.get_customer_details',
+                args: {
+                    customer: frm.doc.customer
+                },
+                callback: function(r) {
+                    if (r.message) {
+                        frm.set_value('customer_name', r.message.customer_name);
+                        frm.set_value('territory', r.message.territory);
+                    }
+                }
+            });
+        }
+    },
+    
+    // Custom button
+    refresh: function(frm) {
+        if (frm.doc.docstatus === 1) {
+            frm.add_custom_button(__('Sales Invoice'), function() {
+                // Create Sales Invoice from Sales Order
+                frappe.model.open_mapped_doc({
+                    method: 'erpnext.selling.doctype.sales_order.sales_order.make_sales_invoice',
+                    frm: frm
+                });
+            }, __('Create'));
+        }
+    }
+});
+
+// Child table events
+frappe.ui.form.on('Sales Order Item', {
+    item_code: function(frm, cdt, cdn) {
+        let row = locals[cdt][cdn];
+        if (row.item_code) {
+            // Fetch item details when item is selected
+            frappe.call({
+                method: 'erpnext.stock.get_item_details.get_item_details',
+                args: {
+                    item_code: row.item_code,
+                    company: frm.doc.company
+                },
+                callback: function(r) {
+                    if (r.message) {
+                        frappe.model.set_value(cdt, cdn, 'rate', r.message.price_list_rate);
+                    }
+                }
+            });
+        }
+    },
+    
+    qty: function(frm, cdt, cdn) {
+        // Recalculate amount when quantity changes
+        let row = locals[cdt][cdn];
+        row.amount = flt(row.qty) * flt(row.rate);
+        frm.refresh_field('items');
+    }
+});
+```
+
+## Field Types
+
+ERPNext provides various field types for different data:
+
+<Accordion title="Common Field Types">
+  | Field Type | Description | Example |
+  |------------|-------------|----------|
+  | **Data** | Short text (140 chars) | Name, Code |
+  | **Text** | Long text | Description |
+  | **Link** | Reference to another DocType | Customer, Item |
+  | **Select** | Dropdown with fixed options | Status, Type |
+  | **Date** | Date picker | Transaction Date |
+  | **Datetime** | Date and time | Posting Time |
+  | **Int** | Integer number | Quantity |
+  | **Float** | Decimal number | Rate, Amount |
+  | **Currency** | Monetary value | Grand Total |
+  | **Check** | Boolean checkbox | Is Active |
+  | **Table** | Child table | Items, Taxes |
+  | **Attach** | File upload | Document scan |
+  | **HTML** | Custom HTML | Instructions |
+  | **Code** | Code editor | Custom Script |
+</Accordion>
+
+## Controller Inheritance
+
+ERPNext uses controller inheritance for shared functionality:
+
+```python
+# Inheritance hierarchy from ERPNext source
+Document (Frappe)                    # Base class
+  ↓
+TransactionBase (ERPNext)            # Common transaction logic
+  ↓
+AccountsController (ERPNext)         # Accounting logic
+  ↓
+SellingController (ERPNext)          # Selling-specific logic
+  ↓
+SalesOrder (Your DocType)            # Specific implementation
+```
+
+<CodeGroup>
+```python Basic Document
+# Inherits from Document
+from frappe.model.document import Document
+
+class MyDocType(Document):
+    def validate(self):
+        # Your validation logic
+        pass
+```
+
+```python Accounting Transaction
+# Inherits accounting capabilities
+from erpnext.controllers.accounts_controller import AccountsController
+
+class CustomInvoice(AccountsController):
+    # Inherits:
+    # - GL Entry creation
+    # - Tax calculation
+    # - Currency handling
+    # - Payment terms
+    pass
+```
+
+```python Stock Transaction
+# Inherits stock management
+from erpnext.controllers.stock_controller import StockController
+
+class CustomDelivery(StockController):
+    # Inherits:
+    # - Stock ledger updates
+    # - Serial/batch handling
+    # - Valuation
+    pass
+```
+</CodeGroup>
+
+## Child Tables
+
+Many DocTypes have child tables (one-to-many relationships):
+
+```python
+class SalesOrder(SellingController):
+    def validate(self):
+        # Iterate child table
+        for item in self.items:
+            if item.qty <= 0:
+                frappe.throw(f"Row {item.idx}: Quantity must be positive")
+            
+            # Calculate item amount
+            item.amount = flt(item.qty) * flt(item.rate)
+        
+        # Add new row programmatically
+        self.append('items', {
+            'item_code': 'ITEM-001',
+            'qty': 1,
+            'rate': 100
+        })
+        
+        # Remove rows
+        self.items = [item for item in self.items if item.qty > 0]
+```
+
+## Naming Rules
+
+Configure how documents are named:
+
+<Accordion title="Naming Options">
+  <Steps>
+    <Step title="Auto Increment">
+      ```json
+      {"autoname": "autoincrement"}
+      ```
+      Generates: 1, 2, 3...
+    </Step>
+    
+    <Step title="Naming Series">
+      ```json
+      {"autoname": "naming_series:"}
+      ```
+      User can select from predefined series: SAL-ORD-.YYYY.-, PO-.####
+    </Step>
+    
+    <Step title="Field-based">
+      ```json
+      {"autoname": "field:customer_code"}
+      ```
+      Uses value from specified field
+    </Step>
+    
+    <Step title="Custom Naming">
+      ```python
+      def autoname(self):
+          self.name = f"{self.customer}-{self.transaction_date}"
+      ```
+      Implement custom logic in controller
+    </Step>
+  </Steps>
+</Accordion>
+
+## Document Permissions
+
+Permissions control who can access and modify documents:
+
+```json
+{
+  "permissions": [
+    {
+      "role": "Sales User",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "submit": 0,
+      "cancel": 0,
+      "delete": 0
+    },
+    {
+      "role": "Sales Manager",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "submit": 1,
+      "cancel": 1,
+      "delete": 1
+    }
+  ]
+}
+```
+
+### User Permissions
+
+Restrict access to specific records:
+
+```python
+# User can only see their own sales orders
+frappe.share.add(
+    doctype='Sales Order',
+    name='SO-001',
+    user='sales@example.com',
+    read=1,
+    write=1
+)
+```
+
+## Virtual Fields
+
+Compute values on-the-fly without storing in database:
+
+```python
+class SalesOrder(SellingController):
+    def before_save(self):
+        # Virtual field computed before save
+        self.total_weight = sum(
+            flt(item.qty) * flt(item.weight_per_unit) 
+            for item in self.items
+        )
+```
+
+## Validation Patterns
+
+<Note>
+  Validation should happen in `validate()` method. Use `before_save()` for computations.
+</Note>
+
+```python
+from frappe import _
+from frappe.utils import flt, getdate
+
+class SalesOrder(SellingController):
+    def validate(self):
+        super().validate()
+        self.validate_mandatory_fields()
+        self.validate_dates()
+        self.validate_items()
+        self.validate_credit_limit()
+    
+    def validate_mandatory_fields(self):
+        if not self.customer:
+            frappe.throw(_("Customer is mandatory"))
+    
+    def validate_dates(self):
+        if self.delivery_date and getdate(self.delivery_date) < getdate(self.transaction_date):
+            frappe.throw(_("Delivery Date cannot be before Transaction Date"))
+    
+    def validate_items(self):
+        if not self.items:
+            frappe.throw(_("Please add at least one item"))
+        
+        for item in self.items:
+            if flt(item.qty) <= 0:
+                frappe.throw(_(f"Row {item.idx}: Quantity must be greater than 0"))
+            
+            if flt(item.rate) < 0:
+                frappe.throw(_(f"Row {item.idx}: Rate cannot be negative"))
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Use Inheritance" icon="sitemap">
+    Extend existing controllers instead of duplicating code
+  </Card>
+  
+  <Card title="Validate Early" icon="shield-check">
+    Validate data in `validate()` before database operations
+  </Card>
+  
+  <Card title="Translation Ready" icon="language">
+    Use `_()` for all user-facing strings
+  </Card>
+  
+  <Card title="Type Hints" icon="code">
+    Use auto-generated type hints for better IDE support
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={3}>
+  <Card title="Hooks" icon="plug" href="/developers/hooks">
+    Extend DocTypes using hooks
+  </Card>
+  
+  <Card title="Testing" icon="vial" href="/developers/testing">
+    Write tests for DocTypes
+  </Card>
+  
+  <Card title="API" icon="code" href="/api/overview">
+    API reference
+  </Card>
+</CardGroup>

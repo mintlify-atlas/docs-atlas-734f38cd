@@ -1,0 +1,568 @@
+---
+title: Utility Functions
+description: Essential utility functions and helpers in Frappe Framework for ERPNext development
+---
+
+Frappe provides a comprehensive set of utility functions for common operations like date manipulation, formatting, validation, and data conversion.
+
+## Import Utilities
+
+```python
+import frappe
+from frappe import _  # Translation function
+from frappe.utils import (
+    flt, cint, cstr,  # Type conversion
+    getdate, nowdate, now, now_datetime,  # Date/time
+    formatdate, get_datetime,  # Formatting
+    add_days, add_months,  # Date arithmetic
+    get_link_to_form  # UI helpers
+)
+```
+
+## Type Conversion
+
+### flt() - Float Conversion
+
+Convert any value to float with precision handling.
+
+<ParamField path="value" type="any" required>
+  Value to convert to float
+</ParamField>
+
+<ParamField path="precision" type="int" default="2">
+  Number of decimal places
+</ParamField>
+
+<CodeGroup>
+```python Basic Float Conversion
+from frappe.utils import flt
+
+# Convert to float
+value = flt("123.456")  # 123.456
+price = flt("100.999", 2)  # 100.99
+
+# Handle None/empty
+safe_value = flt(None)  # 0.0
+empty_value = flt("")  # 0.0
+
+# Currency calculations
+grand_total = flt(net_total) + flt(tax_amount)
+discount = flt(total * discount_percent / 100, 2)
+```
+
+```python With Field Precision
+from frappe.utils import flt
+from frappe.model.meta import get_field_precision
+
+# Get precision from field definition
+precision = get_field_precision(
+    frappe.get_meta("Sales Invoice").get_field("grand_total"),
+    doc=invoice
+)
+
+amount = flt(invoice.grand_total, precision)
+```
+</CodeGroup>
+
+### cint() - Integer Conversion
+
+Convert any value to integer.
+
+<ParamField path="value" type="any" required>
+  Value to convert to integer
+</ParamField>
+
+<CodeGroup>
+```python Integer Conversion
+from frappe.utils import cint
+
+# Convert to integer
+quantity = cint("10")  # 10
+disabled = cint(None)  # 0
+
+# Boolean to int
+is_enabled = cint(True)  # 1
+is_disabled = cint(False)  # 0
+
+# Use in comparisons
+if cint(frappe.db.get_value("Item", item_code, "disabled")):
+    frappe.throw("Item is disabled")
+
+# Check settings
+if not cint(frappe.db.get_default("hide_currency_symbol")):
+    show_currency_symbol()
+```
+</CodeGroup>
+
+### cstr() - String Conversion
+
+Safely convert any value to string.
+
+<ParamField path="value" type="any" required>
+  Value to convert to string
+</ParamField>
+
+<CodeGroup>
+```python String Conversion
+from frappe.utils import cstr
+
+# Convert to string
+name = cstr(customer_id)
+description = cstr(None)  # ""
+
+# Format values
+message = cstr(error_message)
+log_entry = cstr({"status": "success", "count": 10})
+```
+</CodeGroup>
+
+## Date and Time Functions
+
+### nowdate() - Current Date
+
+Get current date as string.
+
+<CodeGroup>
+```python Current Date
+from frappe.utils import nowdate
+
+# Get today's date
+today = nowdate()  # "2024-03-06"
+
+# Use in queries
+invoices = frappe.get_all("Sales Invoice",
+    filters={"posting_date": nowdate()}
+)
+
+# Default value
+if not posting_date:
+    posting_date = nowdate()
+```
+</CodeGroup>
+
+### now() - Current Timestamp
+
+Get current timestamp as string.
+
+<CodeGroup>
+```python Current Timestamp
+from frappe.utils import now
+
+# Get current timestamp
+timestamp = now()  # "2024-03-06 14:30:00.123456"
+
+# Log timestamp
+log = {
+    "timestamp": now(),
+    "action": "Document Created"
+}
+```
+</CodeGroup>
+
+### now_datetime() - Current Datetime Object
+
+Get current datetime as Python datetime object.
+
+<CodeGroup>
+```python Datetime Object
+from frappe.utils import now_datetime
+import datetime
+
+# Get datetime object
+current_time = now_datetime()  # datetime.datetime object
+
+# Use in comparisons
+if document.modified > now_datetime() - datetime.timedelta(hours=1):
+    print("Recently modified")
+```
+</CodeGroup>
+
+### getdate() - Parse Date
+
+Convert string to date object.
+
+<ParamField path="date_string" type="string | datetime" required>
+  Date string or datetime object to convert
+</ParamField>
+
+<CodeGroup>
+```python Parse Date String
+from frappe.utils import getdate
+
+# Parse date string
+date_obj = getdate("2024-03-06")  # datetime.date object
+
+# Convert datetime to date
+from frappe.utils import get_datetime
+dt = get_datetime("2024-03-06 14:30:00")
+date_only = getdate(dt)
+
+# Use in calculations
+fiscal_year_start = getdate("2024-01-01")
+fiscal_year_end = getdate("2024-12-31")
+
+if getdate(invoice.posting_date) >= fiscal_year_start:
+    print("In current fiscal year")
+```
+</CodeGroup>
+
+### get_datetime() - Parse Datetime
+
+Convert string to datetime object.
+
+<CodeGroup>
+```python Parse Datetime
+from frappe.utils import get_datetime
+
+# Parse datetime string
+dt = get_datetime("2024-03-06 14:30:00")
+
+# Use in filters
+from_datetime = get_datetime("2024-01-01 00:00:00")
+to_datetime = get_datetime("2024-12-31 23:59:59")
+
+events = frappe.get_all("Event",
+    filters=[
+        ["starts_on", ">=", from_datetime],
+        ["starts_on", "<=", to_datetime]
+    ]
+)
+```
+</CodeGroup>
+
+### formatdate() - Format Date
+
+Format date for display.
+
+<ParamField path="date" type="string | datetime" required>
+  Date to format
+</ParamField>
+
+<ParamField path="format_string" type="string" default="None">
+  Optional format string (uses user preference if not provided)
+</ParamField>
+
+<CodeGroup>
+```python Format Date for Display
+from frappe.utils import formatdate
+
+# Format with user's preference
+formatted = formatdate("2024-03-06")  # "06-03-2024" (based on user settings)
+
+# Custom format
+formatted = formatdate("2024-03-06", "dd-mm-yyyy")  # "06-03-2024"
+formatted = formatdate("2024-03-06", "dd/mm/yyyy")  # "06/03/2024"
+formatted = formatdate("2024-03-06", "yyyy-mm-dd")  # "2024-03-06"
+
+# In reports
+for row in data:
+    row["posting_date"] = formatdate(row["posting_date"])
+```
+</CodeGroup>
+
+### Date Arithmetic
+
+Add or subtract days, months, years from dates.
+
+<CodeGroup>
+```python Add Days
+from frappe.utils import add_days, nowdate
+
+# Add days to date
+tomorrow = add_days(nowdate(), 1)
+next_week = add_days(nowdate(), 7)
+last_week = add_days(nowdate(), -7)
+
+# Calculate due date
+invoice.due_date = add_days(invoice.posting_date, 
+    payment_terms.credit_days
+)
+```
+
+```python Add Months
+from frappe.utils import add_months, nowdate
+
+# Add months to date
+next_month = add_months(nowdate(), 1)
+last_year = add_months(nowdate(), -12)
+
+# Subscription end date
+subscription.end_date = add_months(
+    subscription.start_date,
+    subscription.billing_interval_count
+)
+```
+
+```python Date Calculations
+from frappe.utils import (
+    add_days, add_months, add_years,
+    date_diff, month_diff, getdate
+)
+
+# Date difference
+days = date_diff(end_date, start_date)
+
+# Month difference
+months = month_diff(end_date, start_date)
+
+# Add years
+next_year = add_years(nowdate(), 1)
+```
+</CodeGroup>
+
+## Validation Functions
+
+### validate_email_address()
+
+Validate email format.
+
+<CodeGroup>
+```python Email Validation
+from frappe.utils import validate_email_address
+
+# Validate email
+try:
+    validate_email_address("user@example.com", throw=True)
+    print("Valid email")
+except frappe.exceptions.InvalidEmailAddressError:
+    print("Invalid email")
+
+# Without exception
+is_valid = validate_email_address("user@example.com", throw=False)
+if is_valid:
+    contact.add_email(email)
+```
+</CodeGroup>
+
+### validate_phone_number()
+
+Validate phone number format.
+
+<CodeGroup>
+```python Phone Validation
+from frappe.utils import validate_phone_number
+
+# Validate phone
+try:
+    validate_phone_number("+91 9876543210", throw=True)
+except frappe.exceptions.InvalidPhoneNumberError:
+    frappe.throw("Invalid phone number")
+```
+</CodeGroup>
+
+## Formatting Functions
+
+### fmt_money()
+
+Format currency amounts.
+
+<ParamField path="amount" type="float" required>
+  Amount to format
+</ParamField>
+
+<ParamField path="currency" type="string" default="None">
+  Currency code
+</ParamField>
+
+<CodeGroup>
+```python Format Currency
+from frappe.utils import fmt_money
+
+# Format amount
+formatted = fmt_money(1234.56, currency="USD")  # "$1,234.56"
+formatted = fmt_money(1234.56, currency="INR")  # "₹1,234.56"
+
+# In reports
+for row in data:
+    row["grand_total"] = fmt_money(
+        row["grand_total"],
+        currency=row["currency"]
+    )
+```
+</CodeGroup>
+
+### get_number_format_info()
+
+Get number formatting information.
+
+<CodeGroup>
+```python Number Format
+from frappe.utils import get_number_format_info
+
+# Get format info
+format_info = get_number_format_info()
+# {"decimal_str": ".", "group_sep": ",", "precision": 2}
+```
+</CodeGroup>
+
+## UI Helper Functions
+
+### get_link_to_form()
+
+Create clickable link to form.
+
+<ParamField path="doctype" type="string" required>
+  DocType name
+</ParamField>
+
+<ParamField path="name" type="string" required>
+  Document name
+</ParamField>
+
+<ParamField path="label" type="string">
+  Link label (defaults to name)
+</ParamField>
+
+<CodeGroup>
+```python Create Form Links
+from frappe.utils import get_link_to_form
+
+# Create link
+link = get_link_to_form("Customer", "CUST-001")
+# <a href="/app/customer/CUST-001">CUST-001</a>
+
+# With custom label
+link = get_link_to_form("Sales Invoice", "SI-2024-001", "View Invoice")
+
+# In notifications
+message = f"Please review {get_link_to_form('Purchase Order', po.name)}"
+frappe.msgprint(message)
+
+# In error messages
+frappe.throw(
+    f"Stock not available in {get_link_to_form('Warehouse', warehouse)}"
+)
+```
+</CodeGroup>
+
+## Translation Function
+
+### _() - Translate String
+
+Translate strings based on user language.
+
+<CodeGroup>
+```python Translation
+from frappe import _
+
+# Simple translation
+message = _("Hello World")
+
+# With variables
+error = _("Item {0} is not available").format(item_code)
+
+# In validation
+frappe.throw(_("Quantity cannot be negative"))
+
+# User messages
+frappe.msgprint(_("Document saved successfully"))
+```
+</CodeGroup>
+
+## Common Patterns
+
+### Safe Value Access
+
+<CodeGroup>
+```python Safe Access Pattern
+from frappe.utils import flt, cint, cstr
+
+# Safely get and convert values
+quantity = flt(doc.get("qty") or 0)
+price = flt(doc.get("rate") or 0)
+total = quantity * price
+
+# Boolean flags
+is_disabled = cint(doc.get("disabled"))
+if is_disabled:
+    frappe.throw("Document is disabled")
+
+# String handling
+description = cstr(doc.get("description") or "")
+```
+</CodeGroup>
+
+### Date Range Queries
+
+<CodeGroup>
+```python Date Range Filter
+from frappe.utils import nowdate, add_days, getdate
+
+# Last 7 days
+start_date = add_days(nowdate(), -7)
+end_date = nowdate()
+
+invoices = frappe.get_all("Sales Invoice",
+    filters=[
+        ["posting_date", ">=", start_date],
+        ["posting_date", "<=", end_date],
+        ["docstatus", "=", 1]
+    ],
+    fields=["name", "customer", "grand_total"]
+)
+```
+</CodeGroup>
+
+### Currency Calculations
+
+<CodeGroup>
+```python Currency Operations
+from frappe.utils import flt, fmt_money
+
+def calculate_totals(items, tax_rate=0.18):
+    """Calculate totals with proper precision"""
+    subtotal = sum(flt(item.get("amount")) for item in items)
+    tax_amount = flt(subtotal * tax_rate, 2)
+    grand_total = flt(subtotal + tax_amount, 2)
+    
+    return {
+        "subtotal": subtotal,
+        "tax_amount": tax_amount,
+        "grand_total": grand_total,
+        "formatted_total": fmt_money(grand_total, currency="USD")
+    }
+```
+</CodeGroup>
+
+## Best Practices
+
+<Card title="Always Use Type Converters" icon="shield">
+  Use `flt()`, `cint()`, `cstr()` to safely handle None and empty values:
+  ```python
+  # Good
+  total = flt(qty) * flt(rate)
+  
+  # Bad (can cause TypeError)
+  total = qty * rate  # Fails if qty is None
+  ```
+</Card>
+
+<Card title="Use getdate() for Comparisons" icon="calendar">
+  Convert strings to date objects for reliable comparisons:
+  ```python
+  from frappe.utils import getdate
+  
+  if getdate(invoice.due_date) < getdate(nowdate()):
+      mark_invoice_overdue(invoice)
+  ```
+</Card>
+
+<Card title="Format Dates for Display" icon="eye">
+  Use `formatdate()` for user-friendly date display:
+  ```python
+  from frappe.utils import formatdate
+  
+  # Format for user's locale
+  display_date = formatdate(invoice.posting_date)
+  ```
+</Card>
+
+<Card title="Translate User Messages" icon="language">
+  Always wrap user-facing strings in `_()` for i18n:
+  ```python
+  from frappe import _
+  
+  frappe.msgprint(_("Operation completed successfully"))
+  frappe.throw(_("Invalid input provided"))
+  ```
+</Card>

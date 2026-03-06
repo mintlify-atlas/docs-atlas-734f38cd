@@ -1,0 +1,319 @@
+---
+title: ERPNext Architecture
+description: Understanding ERPNext and Frappe Framework architecture patterns
+---
+
+ERPNext is built on top of the Frappe Framework, a full-stack web application framework written in Python and JavaScript. Understanding the architecture is essential for extending and customizing ERPNext.
+
+## Framework Architecture
+
+ERPNext follows a modular, metadata-driven architecture that separates business logic from the framework layer.
+
+<Steps>
+  <Step title="Application Layer">
+    ERPNext is organized into modules (Accounts, Stock, Selling, Buying, Manufacturing, etc.) that contain business logic and domain-specific functionality.
+  </Step>
+  
+  <Step title="Framework Layer">
+    Frappe Framework provides the foundation: ORM, routing, authentication, background jobs, websockets, and API infrastructure.
+  </Step>
+  
+  <Step title="Database Layer">
+    Uses MariaDB/MySQL with a metadata-driven schema. DocTypes define the data model dynamically.
+  </Step>
+</Steps>
+
+## Core Architectural Patterns
+
+### 1. Metadata-Driven Design
+
+ERPNext uses JSON metadata files to define DocTypes (data models). The framework reads these definitions and generates database tables, forms, and APIs automatically.
+
+```python
+# DocType metadata is stored in JSON files
+# Example: sales_order.json defines the Sales Order structure
+{
+  "doctype": "DocType",
+  "name": "Sales Order",
+  "autoname": "naming_series:",
+  "fields": [
+    {
+      "fieldname": "customer",
+      "fieldtype": "Link",
+      "options": "Customer",
+      "reqd": 1
+    }
+  ]
+}
+```
+
+### 2. Controller Pattern
+
+Each DocType has a corresponding Python controller class that inherits from `Document` or specialized controllers.
+
+<CodeGroup>
+```python Basic Controller
+# sales_order.py
+from frappe.model.document import Document
+
+class SalesOrder(Document):
+    def validate(self):
+        """Called before saving the document"""
+        self.calculate_totals()
+        self.validate_delivery_date()
+    
+    def on_submit(self):
+        """Called when document is submitted"""
+        self.update_stock_reservation()
+        self.create_gl_entries()
+```
+
+```python Inherited Controller
+# ERPNext uses controller inheritance for common behavior
+from erpnext.controllers.selling_controller import SellingController
+
+class SalesOrder(SellingController):
+    # Inherits common selling logic:
+    # - Price list handling
+    # - Tax calculations
+    # - Customer validations
+    pass
+```
+
+```python Controller Hierarchy
+# Example from erpnext/selling/doctype/sales_order/sales_order.py
+class SalesOrder(SellingController):
+    # SellingController → StockController → AccountsController → TransactionBase → Document
+    
+    def validate(self):
+        super().validate()  # Calls parent validation chain
+        self.validate_order_type()
+        self.validate_delivery_date()
+```
+</CodeGroup>
+
+### 3. Module Structure
+
+ERPNext follows a consistent directory structure:
+
+```bash
+erpnext/
+├── accounts/          # Accounting module
+│   ├── doctype/
+│   │   ├── sales_invoice/
+│   │   │   ├── sales_invoice.json    # Metadata
+│   │   │   ├── sales_invoice.py      # Controller
+│   │   │   ├── sales_invoice.js      # Client-side logic
+│   │   │   └── test_sales_invoice.py # Tests
+│   ├── report/        # Reports
+│   └── page/          # Custom pages
+├── stock/             # Inventory management
+├── selling/           # Sales module
+├── buying/            # Procurement module
+├── manufacturing/     # Production module
+├── controllers/       # Shared controllers
+│   ├── accounts_controller.py
+│   ├── selling_controller.py
+│   └── stock_controller.py
+└── hooks.py          # App configuration
+```
+
+## Document Lifecycle
+
+Understanding the document lifecycle is crucial for implementing business logic:
+
+<Accordion title="Document States">
+  <Steps>
+    <Step title="Draft (docstatus = 0)">
+      Document is being created/edited. Can be modified freely.
+    </Step>
+    
+    <Step title="Submitted (docstatus = 1)">
+      Document is finalized and locked. Creates ledger entries and affects other documents.
+    </Step>
+    
+    <Step title="Cancelled (docstatus = 2)">
+      Document is reversed. Reverses ledger entries and linked transactions.
+    </Step>
+  </Steps>
+</Accordion>
+
+### Document Events
+
+Framework provides hooks at every stage of document lifecycle:
+
+```python
+class SalesOrder(SellingController):
+    def validate(self):
+        """Before save (draft/submit)"""
+        pass
+    
+    def before_save(self):
+        """Just before saving to database"""
+        pass
+    
+    def on_update(self):
+        """After save to database"""
+        pass
+    
+    def before_submit(self):
+        """Before submission"""
+        pass
+    
+    def on_submit(self):
+        """After successful submission"""
+        pass
+    
+    def on_cancel(self):
+        """When document is cancelled"""
+        pass
+    
+    def on_trash(self):
+        """Before document is deleted"""
+        pass
+```
+
+## API Architecture
+
+### Whitelisted Methods
+
+Expose server-side methods as REST/RPC endpoints:
+
+```python
+import frappe
+
+@frappe.whitelist()
+def get_customer_outstanding(customer):
+    """Callable via /api/method/erpnext.accounts.utils.get_customer_outstanding"""
+    return frappe.db.get_value(
+        "Sales Invoice",
+        {"customer": customer, "docstatus": 1},
+        "sum(outstanding_amount)"
+    )
+```
+
+### Permission System
+
+Role-based permissions are defined in DocType metadata and enforced automatically:
+
+```python
+# Check permissions in code
+if frappe.has_permission("Sales Order", "write", doc):
+    doc.save()
+
+# User permissions filter data
+frappe.get_all("Sales Order", filters={"customer": "CUST-001"})
+# Returns only orders the user has permission to see
+```
+
+## Regional Customization
+
+ERPNext supports region-specific overrides without modifying core code:
+
+```python
+# From erpnext/__init__.py
+import erpnext
+
+@erpnext.allow_regional
+def calculate_taxes(doc):
+    """Default tax calculation"""
+    return standard_tax_calculation(doc)
+
+# In hooks.py, override for specific regions
+regional_overrides = {
+    "India": {
+        "erpnext.controllers.taxes.calculate_taxes": 
+            "erpnext.regional.india.calculate_gst"
+    }
+}
+```
+
+## Performance Patterns
+
+<Note>
+  ERPNext includes several patterns for optimal performance:
+  - **Caching**: `frappe.cache()` for frequently accessed data
+  - **Background Jobs**: Use `frappe.enqueue()` for long-running tasks
+  - **Query Optimization**: Use `qb` (query builder) instead of raw SQL
+  - **Batch Processing**: Process large datasets in chunks
+</Note>
+
+### Query Builder Example
+
+```python
+from frappe import qb
+from frappe.query_builder.functions import Sum
+
+# Type-safe query building
+SalesInvoice = qb.DocType("Sales Invoice")
+query = (
+    qb.from_(SalesInvoice)
+    .select(SalesInvoice.customer, Sum(SalesInvoice.grand_total))
+    .where(SalesInvoice.docstatus == 1)
+    .groupby(SalesInvoice.customer)
+)
+results = query.run(as_dict=True)
+```
+
+## Key Utilities
+
+### Database Operations
+
+```python
+import frappe
+
+# Get single value
+company = frappe.db.get_value("Sales Order", "SO-001", "company")
+
+# Get document
+doc = frappe.get_doc("Sales Order", "SO-001")
+
+# Create new document
+doc = frappe.get_doc({
+    "doctype": "Sales Order",
+    "customer": "CUST-001",
+    "items": [{"item_code": "ITEM-001", "qty": 10}]
+})
+doc.insert()
+
+# Update
+frappe.db.set_value("Sales Order", "SO-001", "status", "Completed")
+```
+
+### Validation Helpers
+
+```python
+from frappe import _
+
+def validate(self):
+    # Throw user-friendly error
+    if not self.delivery_date:
+        frappe.throw(_("Delivery Date is mandatory"))
+    
+    # Validation with specific exception type
+    if self.total_qty < 0:
+        frappe.throw(
+            _("Quantity cannot be negative"),
+            exc=InvalidQtyError
+        )
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="DocType System" icon="database" href="/developers/doctype">
+    Learn how to create and customize DocTypes
+  </Card>
+  
+  <Card title="Hooks" icon="plug" href="/developers/hooks">
+    Extend ERPNext using hooks
+  </Card>
+  
+  <Card title="Testing" icon="vial" href="/developers/testing">
+    Write tests for your customizations
+  </Card>
+  
+  <Card title="API Reference" icon="code" href="/api/overview">
+    Explore the complete API
+  </Card>
+</CardGroup>

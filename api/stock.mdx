@@ -1,0 +1,486 @@
+---
+title: Stock API
+description: API functions for ERPNext Stock module including inventory management, stock entries, and item details
+---
+
+# Stock Module API
+
+The Stock module provides APIs for inventory management, stock movements, item details, and warehouse operations.
+
+## Item Details APIs
+
+### get_item_details
+
+Retrieve comprehensive item details including pricing, stock levels, tax templates, and warehouse information.
+
+<CodeGroup>
+```python Python
+import frappe
+
+item_details = frappe.call(
+    "erpnext.stock.get_item_details.get_item_details",
+    args={
+        "item_code": "ITEM-0001",
+        "warehouse": "Stores - C",
+        "doctype": "Sales Order",
+        "company": "Company A",
+        "selling_price_list": "Standard Selling",
+        "customer": "CUST-0001",
+        "qty": 10
+    }
+)
+```
+
+```javascript JavaScript
+frappe.call({
+    method: "erpnext.stock.get_item_details.get_item_details",
+    args: {
+        args: {
+            item_code: "ITEM-0001",
+            warehouse: "Stores - C",
+            doctype: "Sales Order",
+            qty: 10
+        }
+    },
+    callback: function(r) {
+        console.log(r.message);
+    }
+});
+```
+</CodeGroup>
+
+<ParamField path="item_code" type="string" required>
+  Item code/ID
+</ParamField>
+
+<ParamField path="warehouse" type="string" default="null">
+  Warehouse for stock information
+</ParamField>
+
+<ParamField path="doctype" type="string" required>
+  Document type (e.g., "Sales Order", "Purchase Order", "Delivery Note")
+</ParamField>
+
+<ParamField path="company" type="string" required>
+  Company name
+</ParamField>
+
+<ParamField path="customer" type="string" default="null">
+  Customer name for customer-specific pricing
+</ParamField>
+
+<ParamField path="supplier" type="string" default="null">
+  Supplier name for supplier-specific details
+</ParamField>
+
+<ParamField path="qty" type="float" default="1">
+  Quantity for pricing calculations
+</ParamField>
+
+<ParamField path="selling_price_list" type="string" default="null">
+  Price list for selling transactions
+</ParamField>
+
+<ParamField path="buying_price_list" type="string" default="null">
+  Price list for buying transactions
+</ParamField>
+
+<ResponseField name="item_details" type="dict">
+  Comprehensive item information
+  <Accordion title="Response Properties">
+    - `item_code`: Item code
+    - `item_name`: Item name
+    - `description`: Item description
+    - `stock_uom`: Stock unit of measure
+    - `price_list_rate`: Rate from price list
+    - `discount_percentage`: Applicable discount
+    - `rate`: Final rate after discount
+    - `amount`: Total amount (qty × rate)
+    - `actual_qty`: Available quantity in warehouse
+    - `projected_qty`: Projected quantity
+    - `warehouse`: Default warehouse
+    - `item_tax_template`: Tax template
+    - `item_tax_rate`: Tax rates as JSON
+    - `has_serial_no`: Whether item has serial numbers
+    - `has_batch_no`: Whether item has batch numbers
+    - `conversion_factor`: UOM conversion factor
+  </Accordion>
+</ResponseField>
+
+---
+
+## Stock Balance APIs
+
+### get_stock_balance
+
+Get current stock balance for an item in a warehouse.
+
+```python
+balance = frappe.call(
+    "erpnext.stock.utils.get_stock_balance",
+    item_code="ITEM-0001",
+    warehouse="Stores - C",
+    posting_date="2024-03-31",
+    with_valuation_rate=True
+)
+# Returns: (qty, valuation_rate) or qty based on with_valuation_rate
+```
+
+<ParamField path="item_code" type="string" required>
+  Item code
+</ParamField>
+
+<ParamField path="warehouse" type="string" required>
+  Warehouse name
+</ParamField>
+
+<ParamField path="posting_date" type="date" default="today">
+  Date for balance calculation
+</ParamField>
+
+<ParamField path="posting_time" type="time" default="current time">
+  Time for balance calculation
+</ParamField>
+
+<ParamField path="with_valuation_rate" type="bool" default="false">
+  Include valuation rate in response
+</ParamField>
+
+<ResponseField name="balance" type="float or tuple">
+  Stock quantity, or tuple of (quantity, valuation_rate) if with_valuation_rate=True
+</ResponseField>
+
+---
+
+### get_stock_value_on
+
+Get total stock value for warehouses on a specific date.
+
+```python
+stock_value = frappe.call(
+    "erpnext.stock.utils.get_stock_value_on",
+    warehouses=["Stores - C", "Finished Goods - C"],
+    posting_date="2024-03-31",
+    item_code="ITEM-0001",
+    company="Company A"
+)
+```
+
+<ParamField path="warehouses" type="list" default="null">
+  List of warehouse names
+</ParamField>
+
+<ParamField path="posting_date" type="date" default="today">
+  Date for valuation
+</ParamField>
+
+<ParamField path="item_code" type="string" default="null">
+  Filter by specific item
+</ParamField>
+
+<ParamField path="company" type="string" default="null">
+  Filter by company
+</ParamField>
+
+<ResponseField name="stock_value" type="float">
+  Total stock value
+</ResponseField>
+
+---
+
+## Stock Entry APIs
+
+### make_stock_entry
+
+Create a stock entry for material movements.
+
+```python
+from erpnext.stock.doctype.stock_entry.stock_entry_utils import make_stock_entry
+
+stock_entry = make_stock_entry(
+    item_code="ITEM-0001",
+    source="Stores - C",
+    target="Work In Progress - C",
+    qty=10,
+    purpose="Material Transfer for Manufacture",
+    do_not_save=False,
+    do_not_submit=False
+)
+```
+
+<ParamField path="item_code" type="string" required>
+  Item code
+</ParamField>
+
+<ParamField path="source" type="string" default="null">
+  Source warehouse
+</ParamField>
+
+<ParamField path="target" type="string" default="null">
+  Target warehouse
+</ParamField>
+
+<ParamField path="qty" type="float" required>
+  Quantity to transfer
+</ParamField>
+
+<ParamField path="purpose" type="string" required>
+  Purpose: "Material Issue", "Material Receipt", "Material Transfer", "Material Transfer for Manufacture", "Manufacture", "Repack"
+</ParamField>
+
+<ParamField path="rate" type="float" default="null">
+  Item rate (auto-calculated if not provided)
+</ParamField>
+
+<ParamField path="company" type="string" default="null">
+  Company name
+</ParamField>
+
+<ParamField path="do_not_save" type="bool" default="false">
+  Return doc without saving
+</ParamField>
+
+<ParamField path="do_not_submit" type="bool" default="false">
+  Save but don't submit
+</ParamField>
+
+<ResponseField name="stock_entry" type="Document">
+  Stock Entry document
+</ResponseField>
+
+---
+
+## Barcode & Serial Number APIs
+
+### scan_barcode
+
+Scan barcode and retrieve item, serial number, batch, or warehouse information.
+
+```python
+result = frappe.call(
+    "erpnext.stock.utils.scan_barcode",
+    search_value="BARCODE123",
+    ctx={
+        "company": "Company A",
+        "doctype": "Delivery Note"
+    }
+)
+```
+
+<ParamField path="search_value" type="string" required>
+  Barcode, serial number, batch number, or warehouse to scan
+</ParamField>
+
+<ParamField path="ctx" type="dict" default="null">
+  Context with company and doctype information
+</ParamField>
+
+<ResponseField name="scan_result" type="dict">
+  Scanned entity information
+  <Accordion title="Possible Response Types">
+    **Barcode Match:**
+    - `barcode`: Barcode value
+    - `item_code`: Associated item
+    - `uom`: Unit of measure
+    
+    **Serial Number Match:**
+    - `serial_no`: Serial number
+    - `item_code`: Associated item
+    - `batch_no`: Batch if applicable
+    
+    **Batch Match:**
+    - `batch_no`: Batch number
+    - `item_code`: Associated item
+    
+    **Warehouse Match:**
+    - `warehouse`: Warehouse name
+  </Accordion>
+</ResponseField>
+
+---
+
+## Valuation APIs
+
+### get_incoming_rate
+
+Get incoming rate for an item based on valuation method (FIFO/LIFO/Moving Average).
+
+```python
+rate = frappe.call(
+    "erpnext.stock.utils.get_incoming_rate",
+    args={
+        "item_code": "ITEM-0001",
+        "warehouse": "Stores - C",
+        "posting_date": "2024-03-15",
+        "posting_time": "10:00:00",
+        "qty": 10,
+        "serial_no": "",
+        "company": "Company A"
+    }
+)
+```
+
+<ParamField path="item_code" type="string" required>
+  Item code
+</ParamField>
+
+<ParamField path="warehouse" type="string" required>
+  Warehouse name
+</ParamField>
+
+<ParamField path="posting_date" type="date" required>
+  Transaction date
+</ParamField>
+
+<ParamField path="qty" type="float" required>
+  Quantity
+</ParamField>
+
+<ParamField path="company" type="string" required>
+  Company name
+</ParamField>
+
+<ResponseField name="rate" type="float">
+  Incoming/valuation rate
+</ResponseField>
+
+---
+
+### get_valuation_method
+
+Get valuation method for an item.
+
+```python
+method = frappe.call(
+    "erpnext.stock.utils.get_valuation_method",
+    item_code="ITEM-0001",
+    company="Company A"
+)
+# Returns: "FIFO", "LIFO", or "Moving Average"
+```
+
+<ParamField path="item_code" type="string" required>
+  Item code
+</ParamField>
+
+<ParamField path="company" type="string" default="null">
+  Company name
+</ParamField>
+
+<ResponseField name="method" type="string">
+  Valuation method: "FIFO", "LIFO", or "Moving Average"
+</ResponseField>
+
+---
+
+## Warehouse APIs
+
+### validate_warehouse_company
+
+Validate that warehouse belongs to the specified company.
+
+```python
+frappe.call(
+    "erpnext.stock.utils.validate_warehouse_company",
+    warehouse="Stores - C",
+    company="Company A"
+)
+```
+
+<ParamField path="warehouse" type="string" required>
+  Warehouse name
+</ParamField>
+
+<ParamField path="company" type="string" required>
+  Company name
+</ParamField>
+
+<ResponseField name="validation" type="null">
+  Raises exception if validation fails
+</ResponseField>
+
+---
+
+## Usage Examples
+
+### Getting Item Details for Sales Order
+
+```python
+import frappe
+
+# Get comprehensive item details
+item_info = frappe.call(
+    "erpnext.stock.get_item_details.get_item_details",
+    args={
+        "item_code": "LAPTOP-001",
+        "warehouse": "Finished Goods - C",
+        "doctype": "Sales Order",
+        "company": "Tech Corp",
+        "customer": "CUST-00001",
+        "selling_price_list": "Standard Selling",
+        "qty": 5,
+        "transaction_date": "2024-03-15"
+    }
+)
+
+print(f"Item Rate: {item_info['rate']}")
+print(f"Available Qty: {item_info['actual_qty']}")
+print(f"Total Amount: {item_info['amount']}")
+```
+
+### Creating Material Transfer
+
+```python
+from erpnext.stock.doctype.stock_entry.stock_entry_utils import make_stock_entry
+
+# Transfer material from Stores to Production
+stock_entry = make_stock_entry(
+    item_code="RAW-MATERIAL-001",
+    source="Stores - C",
+    target="Work In Progress - C",
+    qty=100,
+    purpose="Material Transfer for Manufacture",
+    company="Manufacturing Inc"
+)
+
+print(f"Stock Entry Created: {stock_entry.name}")
+```
+
+### Checking Stock Balance
+
+```python
+import frappe
+
+# Check stock with valuation
+qty, rate = frappe.call(
+    "erpnext.stock.utils.get_stock_balance",
+    item_code="ITEM-0001",
+    warehouse="Stores - C",
+    with_valuation_rate=True
+)
+
+value = qty * rate
+print(f"Quantity: {qty}, Rate: {rate}, Value: {value}")
+```
+
+### Scanning Barcode in POS
+
+```python
+import frappe
+
+# Scan barcode in POS transaction
+scan_result = frappe.call(
+    "erpnext.stock.utils.scan_barcode",
+    search_value="8901234567890",
+    ctx={
+        "company": "Retail Store",
+        "doctype": "POS Invoice",
+        "selling_price_list": "Retail Price"
+    }
+)
+
+if scan_result.get("item_code"):
+    print(f"Item Found: {scan_result['item_code']}")
+    if scan_result.get("has_batch_no"):
+        print(f"Batch: {scan_result.get('batch_no')}")
+```

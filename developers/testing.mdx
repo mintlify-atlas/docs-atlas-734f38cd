@@ -1,0 +1,571 @@
+---
+title: Testing in ERPNext
+description: Writing and running tests for ERPNext customizations
+---
+
+Testing is essential for maintaining code quality and preventing regressions in ERPNext. The framework provides a comprehensive testing infrastructure based on Python's unittest.
+
+## Test Infrastructure
+
+ERPNext uses Frappe's testing framework which provides:
+
+<CardGroup cols={3}>
+  <Card title="Unit Tests" icon="vial">
+    Test individual functions and methods
+  </Card>
+  
+  <Card title="Integration Tests" icon="diagram-project">
+    Test complete workflows and DocType interactions
+  </Card>
+  
+  <Card title="Test Data" icon="database">
+    Fixtures and test records for repeatable tests
+  </Card>
+</CardGroup>
+
+## Writing Tests
+
+### Basic Test Structure
+
+Every DocType can have a `test_*.py` file:
+
+```python
+# erpnext/selling/doctype/sales_order/test_sales_order.py
+import frappe
+from frappe.tests import IntegrationTestCase, change_settings
+from erpnext.selling.doctype.sales_order.sales_order import make_sales_invoice
+
+class TestSalesOrder(IntegrationTestCase):
+    """Tests for Sales Order DocType"""
+    
+    @classmethod
+    def setUpClass(cls):
+        """Run once before all tests"""
+        super().setUpClass()
+        # Create test data
+        cls.customer = frappe.get_doc({
+            "doctype": "Customer",
+            "customer_name": "Test Customer",
+            "customer_group": "Commercial",
+            "territory": "All Territories"
+        }).insert()
+    
+    @classmethod
+    def tearDownClass(cls):
+        """Run once after all tests"""
+        # Clean up test data
+        super().tearDownClass()
+    
+    def setUp(self):
+        """Run before each test"""
+        frappe.set_user("Administrator")
+    
+    def tearDown(self):
+        """Run after each test"""
+        frappe.db.rollback()
+    
+    def test_sales_order_creation(self):
+        """Test creating a basic sales order"""
+        so = make_sales_order()
+        self.assertEqual(so.doctype, "Sales Order")
+        self.assertEqual(so.customer, "_Test Customer")
+        self.assertGreater(so.grand_total, 0)
+    
+    def test_sales_order_validation(self):
+        """Test sales order validation"""
+        so = make_sales_order(do_not_save=True)
+        so.delivery_date = "2020-01-01"  # Past date
+        
+        with self.assertRaises(frappe.ValidationError):
+            so.save()
+    
+    def test_sales_invoice_from_sales_order(self):
+        """Test creating sales invoice from sales order"""
+        so = make_sales_order(do_not_submit=True)
+        so.submit()
+        
+        si = make_sales_invoice(so.name)
+        si.insert()
+        
+        self.assertEqual(si.customer, so.customer)
+        self.assertEqual(len(si.items), len(so.items))
+        self.assertEqual(si.items[0].sales_order, so.name)
+```
+
+### Test Helper Functions
+
+Create reusable test data generators:
+
+```python
+# Test helper functions
+def make_sales_order(customer="_Test Customer", item_code="_Test Item", 
+                     qty=10, rate=100, do_not_save=False, do_not_submit=False):
+    """Create a test Sales Order"""
+    so = frappe.get_doc({
+        "doctype": "Sales Order",
+        "customer": customer,
+        "transaction_date": frappe.utils.today(),
+        "delivery_date": frappe.utils.add_days(frappe.utils.today(), 10),
+        "company": "_Test Company",
+        "items": [{
+            "item_code": item_code,
+            "qty": qty,
+            "rate": rate,
+            "warehouse": "_Test Warehouse - _TC"
+        }]
+    })
+    
+    if not do_not_save:
+        so.insert()
+        if not do_not_submit:
+            so.submit()
+    
+    return so
+```
+
+## Test Patterns from ERPNext
+
+### Testing Validation
+
+```python
+class TestSalesOrder(IntegrationTestCase):
+    def test_delivery_date_validation(self):
+        """Delivery date must be after transaction date"""
+        from frappe.utils import add_days, today
+        
+        so = make_sales_order(do_not_save=True)
+        so.transaction_date = today()
+        so.delivery_date = add_days(today(), -1)  # Yesterday
+        
+        # Should raise validation error
+        with self.assertRaises(frappe.ValidationError) as context:
+            so.save()
+        
+        self.assertIn("Delivery Date", str(context.exception))
+    
+    def test_negative_quantity_validation(self):
+        """Item quantity must be positive"""
+        so = make_sales_order(do_not_save=True)
+        so.items[0].qty = -5
+        
+        with self.assertRaises(frappe.ValidationError):
+            so.save()
+```
+
+### Testing Business Logic
+
+```python
+class TestSalesOrder(IntegrationTestCase):
+    def test_total_calculation(self):
+        """Test order total calculation"""
+        so = make_sales_order(qty=10, rate=100)
+        
+        self.assertEqual(so.total_qty, 10)
+        self.assertEqual(so.total, 1000)
+        self.assertEqual(so.grand_total, 1000)
+    
+    def test_discount_calculation(self):
+        """Test discount application"""
+        so = make_sales_order(do_not_save=True)
+        so.additional_discount_percentage = 10
+        so.save()
+        
+        # 1000 - 10% discount = 900
+        self.assertEqual(so.grand_total, 900)
+    
+    def test_tax_calculation(self):
+        """Test tax calculation"""
+        so = make_sales_order(do_not_save=True)
+        so.append("taxes", {
+            "charge_type": "On Net Total",
+            "account_head": "_Test Tax - _TC",
+            "rate": 10,
+            "description": "Test Tax"
+        })
+        so.save()
+        
+        # 1000 + 10% tax = 1100
+        self.assertEqual(so.grand_total, 1100)
+```
+
+### Testing Workflows
+
+<CodeGroup>
+```python Order to Invoice Flow
+def test_sales_order_to_invoice_flow(self):
+    """Test complete order to invoice workflow"""
+    # Create and submit sales order
+    so = make_sales_order()
+    so.submit()
+    self.assertEqual(so.docstatus, 1)
+    self.assertEqual(so.status, "To Deliver and Bill")
+    
+    # Create sales invoice
+    si = make_sales_invoice(so.name)
+    si.insert()
+    si.submit()
+    
+    # Verify linkage
+    self.assertEqual(si.items[0].sales_order, so.name)
+    
+    # Reload sales order and check status
+    so.reload()
+    self.assertEqual(so.per_billed, 100)
+    self.assertEqual(so.billing_status, "Fully Billed")
+```
+
+```python Stock Reservation
+def test_stock_reservation(self):
+    """Test stock reservation on order submission"""
+    from erpnext.stock.doctype.stock_entry.stock_entry_utils import make_stock_entry
+    
+    # Create stock
+    make_stock_entry(
+        item_code="_Test Item",
+        target="_Test Warehouse - _TC",
+        qty=100,
+        rate=50
+    )
+    
+    # Create sales order with reservation
+    so = make_sales_order(qty=20, do_not_save=True)
+    so.reserve_stock = 1
+    so.insert()
+    so.submit()
+    
+    # Check stock reservation
+    reserved_qty = frappe.db.get_value(
+        "Bin",
+        {"item_code": "_Test Item", "warehouse": "_Test Warehouse - _TC"},
+        "reserved_qty"
+    )
+    self.assertEqual(reserved_qty, 20)
+```
+
+```python Cancellation
+def test_sales_order_cancellation(self):
+    """Test order cancellation reverses reservations"""
+    so = make_sales_order()
+    so.submit()
+    
+    # Cancel order
+    so.cancel()
+    
+    self.assertEqual(so.docstatus, 2)
+    self.assertEqual(so.status, "Cancelled")
+    
+    # Verify stock reservation reversed
+    reserved_qty = frappe.db.get_value(
+        "Bin",
+        {"item_code": "_Test Item", "warehouse": "_Test Warehouse - _TC"},
+        "reserved_qty"
+    )
+    self.assertEqual(reserved_qty, 0)
+```
+</CodeGroup>
+
+### Testing Permissions
+
+```python
+def test_user_permissions(self):
+    """Test user can only access their territory's orders"""
+    from frappe.core.doctype.user_permission.test_user_permission import create_user
+    
+    # Create test user
+    user = create_user("test_sales@example.com", "Sales User")
+    
+    # Create user permission
+    frappe.get_doc({
+        "doctype": "User Permission",
+        "user": user.name,
+        "allow": "Territory",
+        "for_value": "_Test Territory"
+    }).insert(ignore_permissions=True)
+    
+    # Switch to test user
+    frappe.set_user(user.name)
+    
+    # Should only see orders from permitted territory
+    orders = frappe.get_all("Sales Order", filters={"docstatus": 1})
+    
+    for order in orders:
+        territory = frappe.db.get_value("Sales Order", order.name, "territory")
+        self.assertEqual(territory, "_Test Territory")
+```
+
+## Test Fixtures
+
+Use test records for consistent test data:
+
+```json
+// test_records.json
+[
+  {
+    "doctype": "Customer",
+    "customer_name": "_Test Customer",
+    "customer_type": "Company",
+    "customer_group": "_Test Customer Group",
+    "territory": "_Test Territory"
+  },
+  {
+    "doctype": "Item",
+    "item_code": "_Test Item",
+    "item_name": "Test Item",
+    "item_group": "_Test Item Group",
+    "is_stock_item": 1,
+    "valuation_rate": 100
+  }
+]
+```
+
+## Advanced Testing Patterns
+
+### Mocking External APIs
+
+```python
+from unittest.mock import patch, MagicMock
+
+class TestSalesOrder(IntegrationTestCase):
+    @patch('myapp.integrations.shipping.get_shipping_rate')
+    def test_shipping_calculation(self, mock_shipping):
+        """Test shipping rate calculation with mocked API"""
+        # Mock the external API call
+        mock_shipping.return_value = {'rate': 25.50, 'service': 'Express'}
+        
+        so = make_sales_order()
+        shipping_rate = so.calculate_shipping()
+        
+        self.assertEqual(shipping_rate, 25.50)
+        mock_shipping.assert_called_once()
+```
+
+### Testing Background Jobs
+
+```python
+def test_background_job_execution(self):
+    """Test that background job is enqueued correctly"""
+    from frappe.utils.background_jobs import get_jobs
+    
+    so = make_sales_order()
+    
+    # Trigger background job
+    so.send_email_notification()
+    
+    # Check job is queued
+    jobs = get_jobs()
+    self.assertTrue(any('send_email' in str(job) for job in jobs))
+```
+
+### Testing Hooks
+
+```python
+def test_custom_validation_hook(self):
+    """Test custom validation hook executes"""
+    # Hook should prevent orders below minimum value
+    so = make_sales_order(qty=1, rate=50, do_not_save=True)  # Below minimum
+    
+    with self.assertRaises(frappe.ValidationError) as context:
+        so.save()
+    
+    self.assertIn("minimum order value", str(context.exception).lower())
+```
+
+### Performance Testing
+
+```python
+import time
+
+def test_bulk_order_creation_performance(self):
+    """Test performance of creating multiple orders"""
+    start_time = time.time()
+    
+    # Create 100 orders
+    for i in range(100):
+        so = make_sales_order(customer=f"Customer {i}")
+    
+    elapsed_time = time.time() - start_time
+    
+    # Should complete in under 30 seconds
+    self.assertLess(elapsed_time, 30)
+    self.assertGreater(elapsed_time, 0)  # Sanity check
+```
+
+## Test Configuration
+
+### Using Settings Decorator
+
+```python
+from frappe.tests import IntegrationTestCase
+
+class TestSalesOrder(IntegrationTestCase):
+    @IntegrationTestCase.change_settings(
+        "Selling Settings", 
+        {"allow_negative_rates_for_items": 1}
+    )
+    def test_negative_rate_allowed(self):
+        """Test negative rates when setting is enabled"""
+        so = make_sales_order(do_not_save=True)
+        so.items[0].rate = -10
+        so.save()  # Should not raise error
+        
+        self.assertEqual(so.items[0].rate, -10)
+```
+
+## Running Tests
+
+<Steps>
+  <Step title="Run All Tests">
+    ```bash
+    bench --site site1.local run-tests
+    ```
+  </Step>
+  
+  <Step title="Run Specific App Tests">
+    ```bash
+    bench --site site1.local run-tests --app erpnext
+    ```
+  </Step>
+  
+  <Step title="Run Specific Module Tests">
+    ```bash
+    bench --site site1.local run-tests --module erpnext.selling
+    ```
+  </Step>
+  
+  <Step title="Run Specific Test Class">
+    ```bash
+    bench --site site1.local run-tests --test erpnext.selling.doctype.sales_order.test_sales_order.TestSalesOrder
+    ```
+  </Step>
+  
+  <Step title="Run Specific Test Method">
+    ```bash
+    bench --site site1.local run-tests --test erpnext.selling.doctype.sales_order.test_sales_order.TestSalesOrder.test_sales_order_creation
+    ```
+  </Step>
+</Steps>
+
+### Test Options
+
+```bash
+# Run tests in parallel (faster)
+bench --site site1.local run-tests --parallel
+
+# Run with verbose output
+bench --site site1.local run-tests --verbose
+
+# Run with coverage report
+bench --site site1.local run-tests --coverage
+
+# Skip before_tests setup
+bench --site site1.local run-tests --skip-before-tests
+
+# Run only failed tests
+bench --site site1.local run-tests --failfast
+```
+
+## Test Setup
+
+Configure test environment in `setup/utils.py`:
+
+```python
+# erpnext/setup/utils.py
+import frappe
+
+def before_tests():
+    """Setup test environment"""
+    frappe.clear_cache()
+    
+    # Create test company if missing
+    if not frappe.db.exists("Company", "_Test Company"):
+        create_test_company()
+    
+    # Create test items
+    create_test_items()
+    
+    # Create test customers
+    create_test_customers()
+    
+    frappe.db.commit()
+
+def create_test_company():
+    """Create test company with chart of accounts"""
+    from frappe.desk.page.setup_wizard.setup_wizard import setup_complete
+    
+    setup_complete({
+        "currency": "USD",
+        "company_name": "_Test Company",
+        "company_abbr": "_TC",
+        "country": "United States"
+    })
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Isolate Tests" icon="box">
+    Each test should be independent. Use setUp/tearDown to reset state.
+  </Card>
+  
+  <Card title="Use Descriptive Names" icon="tag">
+    Test names should clearly describe what is being tested.
+  </Card>
+  
+  <Card title="Test Edge Cases" icon="triangle-exclamation">
+    Test boundary conditions, invalid inputs, and error scenarios.
+  </Card>
+  
+  <Card title="Keep Tests Fast" icon="bolt">
+    Avoid unnecessary database operations. Use mocks when appropriate.
+  </Card>
+</CardGroup>
+
+<Note>
+  **Always rollback after tests**: Use `frappe.db.rollback()` in `tearDown()` to prevent test data pollution.
+</Note>
+
+## Continuous Integration
+
+Integrate tests into your CI/CD pipeline:
+
+```yaml
+# .github/workflows/test.yml
+name: Run Tests
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v2
+      
+      - name: Setup Frappe
+        run: |
+          pip install frappe-bench
+          bench init frappe-bench --skip-redis-config-generation
+          cd frappe-bench
+          bench get-app erpnext $GITHUB_WORKSPACE
+      
+      - name: Run Tests
+        run: |
+          cd frappe-bench
+          bench --site test_site run-tests --app erpnext --coverage
+```
+
+## Next Steps
+
+<CardGroup cols={3}>
+  <Card title="Architecture" icon="diagram-project" href="/developers/architecture">
+    Understand the framework architecture
+  </Card>
+  
+  <Card title="DocTypes" icon="database" href="/developers/doctype">
+    Learn about creating DocTypes
+  </Card>
+  
+  <Card title="Hooks" icon="plug" href="/developers/hooks">
+    Extend ERPNext with hooks
+  </Card>
+</CardGroup>

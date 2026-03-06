@@ -1,0 +1,212 @@
+---
+title: Introduction to ERPNext
+description: Learn about ERPNext, a powerful open-source ERP system built on the Frappe Framework
+---
+
+# Introduction to ERPNext
+
+ERPNext is a 100% open-source ERP (Enterprise Resource Planning) system designed to help businesses manage their entire operations from a single platform. Built on the robust [Frappe Framework](https://frappeframework.com), ERPNext provides comprehensive tools for accounting, inventory, manufacturing, CRM, and much more.
+
+<Note>
+  ERPNext is completely free and open-source, licensed under GPL-3.0. You can use it, modify it, and deploy it without any licensing fees.
+</Note>
+
+## What is ERPNext?
+
+Running a business is complex—handling invoices, tracking stock, managing personnel, and countless other tasks. While the market typically offers separate software for each function, ERPNext integrates all these capabilities into one cohesive system, completely free of charge.
+
+ERPNext replaces multiple disparate systems with a unified platform that covers:
+- Financial accounting and reporting
+- Inventory and order management  
+- Manufacturing and production planning
+- Customer relationship management (CRM)
+- Human resources and payroll
+- Project management and tracking
+- Asset lifecycle management
+
+## Core Features
+
+<CardGroup cols={2}>
+  <Card title="Accounting" icon="calculator">
+    Complete financial management tools to track cash flow, record transactions, and generate comprehensive financial reports with real-time insights.
+  </Card>
+  
+  <Card title="Order Management" icon="cart-shopping">
+    Track inventory levels, manage sales orders and purchases, handle shipments, and optimize order fulfillment across your supply chain.
+  </Card>
+  
+  <Card title="Manufacturing" icon="industry">
+    Simplify production cycles, track material consumption, plan capacity, manage subcontracting, and monitor work orders from start to finish.
+  </Card>
+  
+  <Card title="Asset Management" icon="boxes-stacked">
+    Manage assets from purchase to disposal—track IT infrastructure, equipment, and resources across all branches in one centralized system.
+  </Card>
+  
+  <Card title="CRM & Sales" icon="handshake">
+    Manage leads, opportunities, customers, and sales pipelines. Track interactions and convert prospects into loyal customers.
+  </Card>
+  
+  <Card title="Projects" icon="list-check">
+    Deliver projects on time and within budget. Track tasks, timesheets, expenses, and issues with full visibility into project profitability.
+  </Card>
+</CardGroup>
+
+## Key Concepts
+
+### DocTypes and Documents
+
+ERPNext is built around the concept of **DocTypes** (Document Types). A DocType is like a database table or a form template. Examples include:
+- Customer
+- Sales Order
+- Item
+- Purchase Receipt
+- Journal Entry
+
+Each instance of a DocType is called a **Document**. For example, "John Smith" would be a Customer document.
+
+### Modules
+
+ERPNext organizes functionality into modules:
+
+- **Accounts**: General ledger, invoicing, payments, taxation
+- **Stock**: Inventory management, warehouses, stock transfers
+- **Buying**: Purchase orders, suppliers, procurement
+- **Selling**: Sales orders, customers, pricing
+- **Manufacturing**: Bill of Materials (BOM), work orders, production
+- **CRM**: Leads, opportunities, campaigns
+- **HR**: Employee records, payroll, leave management
+- **Projects**: Tasks, timesheets, project tracking
+- **Assets**: Asset tracking, maintenance, depreciation
+
+### Company and Multi-tenant Architecture
+
+ERPNext supports multiple companies within a single installation. Each company can have:
+- Its own chart of accounts
+- Separate fiscal years
+- Independent warehouses and cost centers
+- Distinct currencies and tax structures
+
+<Warning>
+  Always select the correct company when creating transactions to ensure proper accounting and reporting.
+</Warning>
+
+## Technology Stack
+
+ERPNext is built on a modern, robust technology foundation:
+
+### Frappe Framework
+
+The [Frappe Framework](https://github.com/frappe/frappe) provides:
+- **Backend**: Python-based application server with database abstraction (supports MariaDB and PostgreSQL)
+- **Frontend**: JavaScript framework for building rich web interfaces
+- **REST API**: Comprehensive API for integrations
+- **Authentication**: User management and role-based permissions
+- **Background Jobs**: Task queue for async operations
+
+### Frappe UI
+
+The [Frappe UI](https://github.com/frappe/frappe-ui) library powers the modern interface:
+- Vue.js-based components
+- Responsive design
+- Single-page application architecture
+
+### Current Version
+
+ERPNext version **17.0.0** (development) requires:
+- Python >= 3.14
+- Frappe Framework >= 17.0.0
+- MariaDB 10.6+ or PostgreSQL 12+
+- Node.js 18+ and npm
+
+## Architecture Overview
+
+```python
+# Example: Getting default company
+import frappe
+import erpnext
+
+# Get the default company for current user
+company = erpnext.get_default_company()
+print(f"Default Company: {company}")
+
+# Get company's default currency
+currency = erpnext.get_company_currency(company)
+print(f"Currency: {currency}")
+```
+
+ERPNext follows a clean architecture:
+- **Controllers**: Business logic for DocTypes
+- **APIs**: RESTful and custom endpoints
+- **Reports**: SQL and Python-based reporting
+- **Pages**: Custom single-page applications
+- **Hooks**: Event-driven customizations
+
+## Use Cases
+
+ERPNext is used by organizations worldwide across various industries:
+
+- **Manufacturing**: Track production, manage BOMs, plan capacity
+- **Distribution**: Handle complex supply chains and logistics
+- **Retail**: Point of sale, inventory, customer loyalty programs
+- **Services**: Project billing, timesheet tracking, resource planning
+- **Education**: Student management, fee collection, scheduling
+- **Healthcare**: Patient records, appointments, billing
+- **Non-profits**: Donor management, grant tracking, program accounting
+
+## Why Choose ERPNext?
+
+<Steps>
+  <Step title="Zero Licensing Costs">
+    Completely free and open-source under GPL-3.0. No per-user fees, no hidden costs.
+  </Step>
+  
+  <Step title="Full Integration">
+    All modules work together seamlessly—changes in inventory automatically update accounting.
+  </Step>
+  
+  <Step title="Customizable">
+    Extend and customize without touching core code. Add custom fields, scripts, and workflows.
+  </Step>
+  
+  <Step title="Modern Technology">
+    Built with Python and JavaScript on a proven, actively maintained framework.
+  </Step>
+  
+  <Step title="Active Community">
+    Thousands of users, developers, and service providers worldwide. Enterprise support available.
+  </Step>
+</Steps>
+
+## Learning Resources
+
+<CardGroup cols={2}>
+  <Card title="Frappe School" icon="graduation-cap" href="https://frappe.school">
+    Free courses on ERPNext and Frappe Framework from the core team and community experts.
+  </Card>
+  
+  <Card title="Official Documentation" icon="book" href="https://docs.erpnext.com">
+    Comprehensive user and administrator documentation with guides and tutorials.
+  </Card>
+  
+  <Card title="Discussion Forum" icon="comments" href="https://discuss.frappe.io/c/erpnext/6">
+    Ask questions, share solutions, and engage with the ERPNext community.
+  </Card>
+  
+  <Card title="GitHub Repository" icon="github" href="https://github.com/frappe/erpnext">
+    Source code, issue tracking, and contribution guidelines.
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+Ready to get started? Here's your path forward:
+
+1. **Try the Demo**: Experience ERPNext live at [erpnext-demo.frappe.cloud](https://erpnext-demo.frappe.cloud)
+2. **Quick Installation**: Follow our [Quickstart Guide](/quickstart) to run ERPNext in minutes
+3. **Full Setup**: Check out the [Installation Guide](/installation) for production deployments
+4. **Learn**: Take courses on [Frappe School](https://frappe.school) to master ERPNext
+
+<Note>
+  New to ERP systems? Start with the quickstart guide to understand the basic workflows before diving into customization.
+</Note>

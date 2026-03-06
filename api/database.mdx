@@ -1,0 +1,633 @@
+---
+title: Database API
+description: Complete guide to Frappe Framework database queries and operations for ERPNext
+---
+
+The Database API (`frappe.db`) provides direct access to the database for queries, value operations, and transactions. Use these methods for efficient data retrieval and updates.
+
+## Query Methods
+
+### frappe.db.sql()
+
+Execute raw SQL queries with parameter binding.
+
+<ParamField path="query" type="string" required>
+  SQL query string with optional placeholders
+</ParamField>
+
+<ParamField path="values" type="dict | tuple" default="None">
+  Values for parameter binding
+</ParamField>
+
+<ParamField path="as_dict" type="bool" default="False">
+  Return results as list of dictionaries
+</ParamField>
+
+<ParamField path="as_list" type="bool" default="False">
+  Return results as list of lists
+</ParamField>
+
+<CodeGroup>
+```python Basic Query
+import frappe
+
+# Execute SQL query
+result = frappe.db.sql("""
+    SELECT name, customer, grand_total 
+    FROM `tabSales Invoice`
+    WHERE docstatus = 1 
+    AND posting_date >= %s
+""", ("2024-01-01",))
+
+for row in result:
+    print(row)
+```
+
+```python Query with Dict Results
+import frappe
+
+# Get results as dictionaries
+invoices = frappe.db.sql("""
+    SELECT 
+        name,
+        customer,
+        grand_total,
+        outstanding_amount
+    FROM `tabSales Invoice`
+    WHERE company = %(company)s
+    AND docstatus = 1
+""", {"company": "_Test Company"}, as_dict=True)
+
+for invoice in invoices:
+    print(invoice.name, invoice.grand_total)
+```
+
+```python Count Query
+import frappe
+
+# Count records
+count = frappe.db.sql("""
+    SELECT COUNT(*) 
+    FROM `tabCustomer`
+    WHERE disabled = 0
+""")[0][0]
+
+print(f"Active customers: {count}")
+```
+
+```python Join Query
+import frappe
+
+# Complex join query
+result = frappe.db.sql("""
+    SELECT 
+        si.name,
+        si.customer,
+        si.grand_total,
+        c.customer_group
+    FROM `tabSales Invoice` si
+    INNER JOIN `tabCustomer` c ON si.customer = c.name
+    WHERE si.docstatus = 1
+    AND c.customer_group = %(group)s
+""", {"group": "Commercial"}, as_dict=True)
+```
+</CodeGroup>
+
+### frappe.db.sql_list()
+
+Get a flat list of values from the first column.
+
+<CodeGroup>
+```python Get List of Names
+import frappe
+
+# Get list of customer names
+customers = frappe.db.sql_list("""
+    SELECT name 
+    FROM `tabCustomer`
+    WHERE customer_group = 'Commercial'
+""")
+
+print(customers)  # ['Customer 1', 'Customer 2', ...]
+```
+
+```python Get IDs for Deletion
+import frappe
+
+# Get invoice IDs to process
+invoice_ids = frappe.db.sql_list("""
+    SELECT name 
+    FROM `tabSales Invoice`
+    WHERE posting_date < '2023-01-01'
+    AND docstatus = 0
+""")
+
+# Delete old draft invoices
+for invoice_id in invoice_ids:
+    frappe.delete_doc("Sales Invoice", invoice_id)
+```
+</CodeGroup>
+
+## Value Operations
+
+### frappe.db.get_value()
+
+Get a single value or multiple values from a document.
+
+<ParamField path="doctype" type="string" required>
+  The DocType name
+</ParamField>
+
+<ParamField path="filters" type="string | dict" required>
+  Document name or filter dictionary
+</ParamField>
+
+<ParamField path="fieldname" type="string | list" default="'name'">
+  Field name or list of field names
+</ParamField>
+
+<ParamField path="as_dict" type="bool" default="False">
+  Return as dictionary
+</ParamField>
+
+<CodeGroup>
+```python Get Single Value
+import frappe
+
+# Get account currency
+currency = frappe.db.get_value("Account", 
+    "Debtors - TC", 
+    "account_currency"
+)
+
+# Get company default currency
+default_currency = frappe.db.get_value("Company", 
+    "_Test Company", 
+    "default_currency"
+)
+```
+
+```python Get Multiple Fields
+import frappe
+
+# Get multiple fields as tuple
+account_number, account_name = frappe.db.get_value("Account",
+    "Debtors - TC",
+    ["account_number", "account_name"]
+)
+
+# Get as dictionary
+account_info = frappe.db.get_value("Account",
+    "Debtors - TC",
+    ["account_number", "account_name", "account_type"],
+    as_dict=True
+)
+
+print(account_info.account_name)
+```
+
+```python Get with Filters
+import frappe
+
+# Get value using filters
+parent_account = frappe.db.get_value("Account",
+    {"account_name": "Debtors", "company": "_Test Company"},
+    "parent_account"
+)
+
+# Get employee by email
+employee = frappe.db.get_value("Employee",
+    {"user_id": "test@example.com"},
+    ["name", "employee_name", "department"],
+    as_dict=True
+)
+```
+</CodeGroup>
+
+### frappe.db.get_single_value()
+
+Get a value from a Single DocType (settings).
+
+<CodeGroup>
+```python Get Settings Value
+import frappe
+
+# Get from single doctype
+api_key = frappe.db.get_single_value("Video Settings", "api_key")
+
+enable_tracking = frappe.db.get_single_value(
+    "Video Settings", 
+    "enable_youtube_tracking"
+)
+
+# Get default company
+default_company = frappe.db.get_single_value(
+    "Global Defaults", 
+    "default_company"
+)
+```
+
+```python Booking Settings
+import frappe
+
+# Check if feature is enabled
+is_enabled = frappe.db.get_single_value(
+    "Appointment Booking Settings",
+    "enable_scheduling"
+)
+
+if is_enabled:
+    # Process appointment booking
+    pass
+```
+</CodeGroup>
+
+### frappe.db.set_value()
+
+Update field values without loading the full document.
+
+<ParamField path="doctype" type="string" required>
+  The DocType name
+</ParamField>
+
+<ParamField path="name" type="string" required>
+  Document name
+</ParamField>
+
+<ParamField path="fieldname" type="string | dict" required>
+  Field name or dictionary of field-value pairs
+</ParamField>
+
+<ParamField path="value" type="any">
+  Value to set (not needed if fieldname is dict)
+</ParamField>
+
+<CodeGroup>
+```python Set Single Field
+import frappe
+
+# Update single field
+frappe.db.set_value("Company", 
+    "_Test Company", 
+    "monthly_sales_target", 
+    10000
+)
+
+# Update account number
+frappe.db.set_value("Account",
+    "Debtors - TC",
+    "account_number",
+    "1210"
+)
+```
+
+```python Set Multiple Fields
+import frappe
+
+# Update multiple fields at once
+frappe.db.set_value("Company", "_Test Company", {
+    "monthly_sales_target": 10000,
+    "total_monthly_sales": 8500,
+    "abbr": "TC"
+})
+
+# Update video statistics
+frappe.db.set_value("Video", video_id, {
+    "view_count": stats["view_count"],
+    "like_count": stats["like_count"],
+    "duration": stats["duration"]
+})
+```
+
+```python Update with Status
+import frappe
+
+# Update transaction status
+frappe.db.set_value("Bulk Transaction Log Detail",
+    log_name,
+    "transaction_status",
+    "Success"
+)
+
+frappe.db.set_value("Bulk Transaction Log Detail",
+    log_name,
+    "retried",
+    1
+)
+```
+</CodeGroup>
+
+### frappe.db.get_list()
+
+Alternative to `frappe.get_list()` for database-level queries.
+
+<CodeGroup>
+```python Get List from Database
+import frappe
+
+# Get failed documents
+failed_docs = frappe.db.get_all(
+    "Bulk Transaction Log Detail",
+    filters={
+        "transaction_status": "Failed",
+        "retried": 0
+    },
+    fields=["name", "reference_doctype", "reference_docname"]
+)
+```
+
+```python Get All Accounts
+import frappe
+
+# Get all accounts with fields
+all_accounts = frappe.get_all("Account",
+    filters={"company": "_Test Company"},
+    fields=["name", "account_name", "account_type", "parent_account"],
+    order_by="lft"
+)
+```
+</CodeGroup>
+
+## Transaction Control
+
+### Commit and Rollback
+
+Manage database transactions for consistency.
+
+<Tabs>
+  <Tab title="Commit">
+    ```python
+    import frappe
+    
+    # Commit changes to database
+    doc = frappe.get_doc({"doctype": "Customer", "customer_name": "New Customer"})
+    doc.insert()
+    frappe.db.commit()  # Persist changes
+    ```
+  </Tab>
+  
+  <Tab title="Rollback">
+    ```python
+    import frappe
+    
+    # Rollback on error
+    try:
+        doc = frappe.get_doc(record)
+        doc.insert()
+        frappe.db.commit()
+    except Exception as e:
+        frappe.db.rollback()  # Undo changes
+        frappe.log_error(str(e))
+    ```
+  </Tab>
+  
+  <Tab title="Savepoint">
+    ```python
+    import frappe
+    
+    # Use savepoints for nested transactions
+    frappe.db.savepoint("before_creation_state")
+    try:
+        doc.insert()
+    except Exception:
+        frappe.db.rollback(save_point="before_creation_state")
+    ```
+  </Tab>
+</Tabs>
+
+### Bulk Operations with Transactions
+
+<CodeGroup>
+```python Bulk Insert with Error Handling
+import frappe
+
+def bulk_create_items(items_data):
+    """Create multiple items with transaction management"""
+    success_count = 0
+    failed_count = 0
+    
+    for item_data in items_data:
+        try:
+            frappe.db.savepoint("before_creation_state")
+            
+            item = frappe.get_doc({
+                "doctype": "Item",
+                **item_data
+            })
+            item.insert()
+            
+            frappe.db.commit()
+            success_count += 1
+            
+        except Exception as e:
+            frappe.db.rollback(save_point="before_creation_state")
+            failed_count += 1
+            frappe.log_error(f"Failed to create item: {str(e)}")
+    
+    return {"success": success_count, "failed": failed_count}
+```
+
+```python Batch Processing
+import frappe
+
+def process_invoices_batch(invoice_ids):
+    """Process invoices in batch with transaction control"""
+    for invoice_id in invoice_ids:
+        try:
+            invoice = frappe.get_doc("Sales Invoice", invoice_id)
+            invoice.submit()
+            frappe.db.commit()
+        except Exception as e:
+            frappe.db.rollback()
+            frappe.log_error(f"Invoice {invoice_id} failed: {str(e)}")
+            continue
+```
+</CodeGroup>
+
+## Counting Records
+
+### frappe.db.count()
+
+Count documents matching filters.
+
+<CodeGroup>
+```python Simple Count
+import frappe
+
+# Count all customers
+total_customers = frappe.db.count("Customer")
+
+# Count active employees
+active_employees = frappe.db.count("Employee", 
+    filters={"status": "Active"}
+)
+```
+
+```python Count with Date Filter
+import frappe
+from datetime import datetime, timedelta
+
+# Count appointments in timeslot
+slot_count = frappe.db.count("Appointment", {
+    "scheduled_time": timeslot
+})
+
+# Count communications
+communication_count = frappe.db.count("Communication", 
+    {"communication_medium": "Email"}
+)
+```
+</CodeGroup>
+
+## Advanced Queries
+
+### Query Builder
+
+Use Frappe's query builder for type-safe queries.
+
+<CodeGroup>
+```python Using Query Builder
+import frappe
+from frappe.query_builder.functions import Sum, Count
+from frappe.query_builder import DocType
+
+# Build query
+SalesInvoice = DocType("Sales Invoice")
+
+query = (
+    frappe.qb.from_(SalesInvoice)
+    .select(
+        SalesInvoice.customer,
+        Sum(SalesInvoice.grand_total).as_("total_amount"),
+        Count(SalesInvoice.name).as_("invoice_count")
+    )
+    .where(
+        (SalesInvoice.docstatus == 1) &
+        (SalesInvoice.posting_date >= "2024-01-01")
+    )
+    .groupby(SalesInvoice.customer)
+)
+
+result = query.run(as_dict=True)
+```
+
+```python Stock Value Query
+import frappe
+from frappe.query_builder.functions import IfNull, Sum
+
+# Calculate stock value
+sle = frappe.qb.DocType("Stock Ledger Entry")
+
+query = (
+    frappe.qb.from_(sle)
+    .select(IfNull(Sum(sle.stock_value_difference), 0))
+    .where(
+        (sle.posting_date <= posting_date) &
+        (sle.is_cancelled == 0) &
+        (sle.warehouse.isin(warehouses))
+    )
+)
+
+stock_value = query.run(as_list=True)[0][0]
+```
+</CodeGroup>
+
+## Utility Methods
+
+### frappe.db.get_values()
+
+Get values for multiple documents.
+
+<CodeGroup>
+```python Get Multiple Values
+import frappe
+
+# Get values for multiple accounts
+accounts = frappe.db.get_values("Account",
+    filters={"company": "_Test Company", "is_group": 0},
+    fieldname=["name", "account_type"],
+    as_dict=True
+)
+
+for account in accounts:
+    print(account.name, account.account_type)
+```
+</CodeGroup>
+
+### frappe.db.exists()
+
+Check document existence.
+
+<CodeGroup>
+```python Check Existence
+import frappe
+
+# Simple existence check
+if frappe.db.exists("Customer", "CUST-001"):
+    print("Customer exists")
+
+# Check with filters
+if frappe.db.exists("Account", {
+    "account_name": "Debtors",
+    "company": "_Test Company"
+}):
+    print("Account found")
+
+# Get name if exists
+account_name = frappe.db.exists("Account", {
+    "account_number": "1210",
+    "company": "_Test Company"
+})
+
+if account_name:
+    print(f"Found account: {account_name}")
+```
+</CodeGroup>
+
+## Best Practices
+
+<Card title="Use Parameter Binding" icon="shield-check">
+  Always use parameter binding in SQL queries to prevent SQL injection:
+  ```python
+  # Good
+  frappe.db.sql("SELECT * FROM `tabCustomer` WHERE name = %s", (customer_name,))
+  
+  # Bad
+  frappe.db.sql(f"SELECT * FROM `tabCustomer` WHERE name = '{customer_name}'")
+  ```
+</Card>
+
+<Card title="Prefer get_value() for Single Fields" icon="bolt">
+  Use `get_value()` instead of `get_doc()` when you only need specific fields:
+  ```python
+  # Efficient
+  currency = frappe.db.get_value("Account", account_name, "account_currency")
+  
+  # Inefficient
+  account = frappe.get_doc("Account", account_name)
+  currency = account.account_currency
+  ```
+</Card>
+
+<Card title="Transaction Management" icon="database">
+  Always use proper transaction management for data consistency:
+  ```python
+  try:
+      # Multiple operations
+      frappe.db.commit()
+  except Exception:
+      frappe.db.rollback()
+  ```
+</Card>
+
+<Card title="Batch Operations" icon="layer-group">
+  Use savepoints for batch operations to handle individual failures:
+  ```python
+  for record in records:
+      frappe.db.savepoint("savepoint_name")
+      try:
+          # Process record
+      except Exception:
+          frappe.db.rollback(save_point="savepoint_name")
+  ```
+</Card>

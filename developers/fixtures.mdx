@@ -1,0 +1,470 @@
+---
+title: Using Fixtures in ERPNext
+description: Learn how to use fixtures to version control master data, custom fields, and configurations in ERPNext apps
+---
+
+Fixtures are a powerful mechanism in Frappe/ERPNext for version controlling master data and configurations. They allow you to package data with your app that will be automatically synchronized across installations.
+
+## What Are Fixtures?
+
+Fixtures are JSON representations of DocType records that are:
+- Stored in your app's codebase
+- Version controlled with Git
+- Automatically synced during `bench migrate`
+- Used for non-transactional, configuration data
+
+## Common Use Cases
+
+- Custom Fields
+- Property Setters
+- Custom DocTypes and their metadata
+- Workflow definitions
+- Print Formats
+- Email Templates
+- Default master data (Item Groups, Customer Groups, etc.)
+
+## Defining Fixtures
+
+### In hooks.py
+
+Define fixtures in your app's `hooks.py` file:
+
+```python
+# custom_app/hooks.py
+
+fixtures = [
+    # Export all records of a DocType
+    "Custom Field",
+    "Property Setter",
+    
+    # Export specific records using filters
+    {
+        "dt": "Custom Field",
+        "filters": [
+            ["name", "in", [
+                "Sales Invoice-custom_reference_no",
+                "Customer-custom_external_id",
+                "Item-custom_manufacturer_code"
+            ]]
+        ]
+    },
+    
+    # Export with more complex filters
+    {
+        "dt": "Workflow",
+        "filters": [
+            ["document_type", "=", "Purchase Order"]
+        ]
+    },
+    
+    # Export print formats
+    {
+        "dt": "Print Format",
+        "filters": [
+            ["standard", "=", "No"],
+            ["module", "=", "Custom App"]
+        ]
+    }
+]
+```
+
+## Exporting Fixtures
+
+<Steps>
+
+### Step 1: Create Your Customizations
+
+Create the records you want to export through the ERPNext UI:
+- Add Custom Fields via Customize Form
+- Create Workflows, Print Formats, etc.
+- Configure Property Setters
+
+### Step 2: Define Fixture Filters
+
+Add appropriate fixture definitions to `hooks.py`:
+
+```python
+fixtures = [
+    {
+        "dt": "Custom Field",
+        "filters": [
+            ["dt", "in", ["Sales Invoice", "Purchase Invoice", "Customer"]]
+        ]
+    }
+]
+```
+
+### Step 3: Export to JSON
+
+Run the export command:
+
+```bash
+bench --site sitename export-fixtures
+```
+
+This creates JSON files in your app's `fixtures` directory.
+
+</Steps>
+
+<Note>
+Fixtures are exported to the `fixtures` folder in your app directory. The framework automatically syncs these files during `bench migrate`.
+</Note>
+
+## Real-World Examples from ERPNext
+
+### Example 1: Custom Fields for Regional Compliance
+
+From ERPNext's UAE localization:
+
+```python
+# erpnext/regional/united_arab_emirates/setup.py
+
+def make_custom_fields():
+    is_zero_rated = dict(
+        fieldname="is_zero_rated",
+        label="Is Zero Rated",
+        fieldtype="Check",
+        fetch_from="item_code.is_zero_rated",
+        fetch_if_empty=1,
+        insert_after="description",
+        print_hide=1,
+    )
+    
+    is_exempt = dict(
+        fieldname="is_exempt",
+        label="Is Exempt",
+        fieldtype="Check",
+        fetch_from="item_code.is_exempt",
+        insert_after="is_zero_rated",
+        print_hide=1,
+    )
+    
+    # Use create_custom_fields to create/update fields
+    from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
+    
+    custom_fields = {
+        "Sales Invoice Item": [is_zero_rated, is_exempt],
+        "Purchase Invoice Item": [is_zero_rated, is_exempt]
+    }
+    
+    create_custom_fields(custom_fields, update=True)
+```
+
+### Example 2: Property Setters
+
+```python
+fixtures = [
+    {
+        "dt": "Property Setter",
+        "filters": [
+            ["doc_type", "=", "Sales Invoice"],
+            ["property", "=", "read_only"]
+        ]
+    }
+]
+```
+
+### Example 3: Workflow Configuration
+
+```python
+fixtures = [
+    # Export complete workflow
+    {
+        "dt": "Workflow",
+        "filters": [["name", "=", "Purchase Order Approval"]]
+    },
+    # Also export workflow states and actions
+    {
+        "dt": "Workflow State",
+        "filters": [["parent", "=", "Purchase Order Approval"]]
+    },
+    {
+        "dt": "Workflow Action Master",
+        "filters": [["workflow_name", "=", "Purchase Order Approval"]]
+    }
+]
+```
+
+## Creating Fixtures Programmatically
+
+### Custom Field Creation
+
+```python
+# custom_app/setup.py
+import frappe
+from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
+
+def after_install():
+    """Create custom fields after app installation"""
+    make_custom_fields()
+
+def make_custom_fields():
+    custom_fields = {
+        "Sales Invoice": [
+            dict(
+                fieldname="custom_payment_status",
+                label="Payment Status",
+                fieldtype="Select",
+                options="\nPending\nPartial\nPaid\nOverdue",
+                insert_after="status",
+                read_only=1
+            ),
+            dict(
+                fieldname="custom_external_reference",
+                label="External Reference",
+                fieldtype="Data",
+                insert_after="custom_payment_status",
+                unique=1
+            )
+        ],
+        "Customer": [
+            dict(
+                fieldname="custom_credit_rating",
+                label="Credit Rating",
+                fieldtype="Rating",
+                insert_after="customer_type"
+            )
+        ]
+    }
+    
+    create_custom_fields(custom_fields, update=True)
+```
+
+## Fixture Sync Workflow
+
+<Steps>
+
+### Development Phase
+
+1. Make changes in your development site
+2. Export fixtures: `bench --site dev.local export-fixtures`
+3. Commit fixture JSON files to Git
+
+### Deployment Phase
+
+1. Pull latest code: `git pull`
+2. Run migrate: `bench --site production.site migrate`
+3. Fixtures are automatically synced
+
+</Steps>
+
+## Advanced Fixture Patterns
+
+### Conditional Fixture Installation
+
+```python
+# custom_app/setup.py
+import frappe
+
+def after_install():
+    """Install fixtures based on conditions"""
+    country = frappe.db.get_single_value("System Settings", "country")
+    
+    if country == "United States":
+        install_us_specific_fixtures()
+    elif country == "United Kingdom":
+        install_uk_specific_fixtures()
+
+def install_us_specific_fixtures():
+    # Create US-specific custom fields
+    custom_fields = {
+        "Address": [
+            dict(
+                fieldname="custom_state_code",
+                label="State Code",
+                fieldtype="Data",
+                insert_after="state"
+            )
+        ]
+    }
+    create_custom_fields(custom_fields)
+```
+
+### Master Data Fixtures
+
+```python
+fixtures = [
+    # Export standard Item Groups
+    {
+        "dt": "Item Group",
+        "filters": [
+            ["name", "in", ["Products", "Raw Material", "Services"]]
+        ]
+    },
+    # Export UOM data
+    {
+        "dt": "UOM",
+        "filters": [
+            ["enabled", "=", 1]
+        ]
+    },
+    # Export custom tax templates
+    {
+        "dt": "Sales Taxes and Charges Template",
+        "filters": [
+            ["company", "=", ""]
+        ]
+    }
+]
+```
+
+## ERPNext's Built-in Fixtures
+
+ERPNext uses fixtures extensively for setup data:
+
+### Installation Fixtures
+
+```python
+# erpnext/setup/setup_wizard/operations/install_fixtures.py
+
+def install(country=None):
+    records = [
+        # Address Template
+        {"doctype": "Address Template", "country": country},
+        
+        # Item Groups
+        {
+            "doctype": "Item Group",
+            "item_group_name": "All Item Groups",
+            "is_group": 1,
+            "parent_item_group": "",
+        },
+        {
+            "doctype": "Item Group",
+            "item_group_name": "Products",
+            "is_group": 0,
+            "parent_item_group": "All Item Groups",
+            "show_in_website": 1,
+        }
+    ]
+    
+    from frappe.desk.page.setup_wizard.setup_wizard import make_records
+    make_records(records)
+```
+
+## Best Practices
+
+### 1. Use Specific Filters
+
+<CodeGroup>
+
+```python title="Good - Specific Filters"
+fixtures = [
+    {
+        "dt": "Custom Field",
+        "filters": [
+            ["module", "=", "Custom App"],
+            ["dt", "in", ["Sales Invoice", "Purchase Invoice"]]
+        ]
+    }
+]
+```
+
+```python title="Bad - Too Broad"
+fixtures = [
+    "Custom Field"  # Exports ALL custom fields
+]
+```
+
+</CodeGroup>
+
+### 2. Handle Fixture Dependencies
+
+Ensure parent records are exported before child records:
+
+```python
+fixtures = [
+    "Workflow",  # Export workflow first
+    "Workflow State",  # Then states
+    "Workflow Action Master"  # Then actions
+]
+```
+
+### 3. Use Standard Fixtures for Config
+
+Store configuration in Single DocTypes and include as fixtures:
+
+```python
+fixtures = [
+    {
+        "dt": "Custom App Settings",
+        "filters": [["name", "=", "Custom App Settings"]]
+    }
+]
+```
+
+### 4. Test Fixture Installation
+
+Always test on a fresh site:
+
+```bash
+# Create test site
+bench new-site test.local
+
+# Install app with fixtures
+bench --site test.local install-app custom_app
+
+# Verify fixtures were installed
+bench --site test.local console
+>>> frappe.get_all("Custom Field", {"module": "Custom App"})
+```
+
+### 5. Document Fixture Changes
+
+Maintain a changelog for fixture updates:
+
+```markdown
+## Changelog
+
+### v2.1.0
+- Added custom fields for Sales Invoice: payment_gateway_id
+- Updated Property Setter for Customer: made tax_id mandatory
+
+### v2.0.0
+- Added complete Purchase Order approval workflow
+- Created custom print format for Delivery Note
+```
+
+## Troubleshooting
+
+### Fixtures Not Syncing
+
+<Warning>
+If fixtures aren't syncing during migrate, check:
+
+1. **File Location**: Ensure JSON files are in the `fixtures` folder
+2. **hooks.py**: Verify fixture definitions are correct
+3. **Permissions**: Check file permissions on fixture JSON files
+4. **Cache**: Clear cache with `bench --site sitename clear-cache`
+</Warning>
+
+### Handling Fixture Conflicts
+
+When multiple apps modify the same DocType:
+
+```python
+# Use update=True to merge changes
+from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
+
+custom_fields = {
+    "Sales Invoice": [new_field_definition]
+}
+
+create_custom_fields(custom_fields, update=True)
+```
+
+### Fixture Export Errors
+
+```bash
+# Check fixture definitions
+bench --site sitename export-fixtures --dry-run
+
+# Export with verbose output
+bench --site sitename export-fixtures --verbose
+```
+
+## Related Resources
+
+- [Creating Custom Apps](custom-app) - Build custom ERPNext apps
+- [Regional Overrides](regional-overrides) - Country-specific functionality
+- [Frappe Custom Fields Guide](https://frappeframework.com/docs/user/en/guides/app-development/custom-fields)

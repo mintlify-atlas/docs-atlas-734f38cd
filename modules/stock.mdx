@@ -1,0 +1,444 @@
+---
+title: Stock Module
+description: Complete inventory management with warehouses, stock movements, batch & serial tracking, stock reconciliation, and real-time stock reports
+---
+
+## Overview
+
+The Stock module provides comprehensive inventory management capabilities. Track stock across multiple warehouses, manage batch and serial numbers, handle stock transfers, and maintain accurate inventory records in real-time.
+
+## Key Features
+
+### Warehouse Management
+
+Organize your inventory storage:
+
+<CardGroup cols={2}>
+  <Card title="Multi-Warehouse" icon="warehouse">
+    - Unlimited warehouses
+    - Hierarchical structure
+    - Location tracking
+    - Warehouse-wise stock levels
+  </Card>
+  <Card title="Bin Locations" icon="boxes-stacked">
+    - Rack and bin management
+    - Easy stock location
+    - Warehouse mapping
+  </Card>
+</CardGroup>
+
+## Core Doctypes
+
+<Accordion title="Stock Entry">
+  The fundamental transaction for all stock movements.
+
+  ```python
+  # From stock_entry.py
+  class StockEntry(StockController):
+      stock_entry_type: Literal[
+          "Material Issue",
+          "Material Receipt",
+          "Material Transfer",
+          "Manufacture",
+          "Repack",
+          "Send to Subcontractor",
+          "Material Transfer for Manufacture",
+          "Material Consumption for Manufacture"
+      ]
+  ```
+
+  **Use Cases:**
+  - Material receipt
+  - Material issue
+  - Transfer between warehouses
+  - Manufacturing entries
+  - Repack/repacking
+  - Material consumption
+  - Scrap/damage recording
+
+  <Note>
+    Stock entries automatically update stock ledger and create accounting entries in real-time.
+  </Note>
+</Accordion>
+
+<Accordion title="Item Master">
+  Central repository of all products and materials.
+
+  **Item Configuration:**
+  - Basic details (name, code, description)
+  - Item group and category
+  - UOM and conversion factors
+  - Valuation method (FIFO, Moving Average)
+  - Default warehouse and supplier
+  - Reorder levels
+  - Batch/serial number settings
+  - Quality inspection requirements
+
+  **Item Variants:**
+  - Size, color, style variations
+  - Template-based variants
+  - Attribute management
+</Accordion>
+
+<Accordion title="Delivery Note">
+  Record outbound shipments to customers.
+
+  **Features:**
+  - Pick list integration
+  - Batch/serial selection
+  - Packing slip generation
+  - Quality inspection
+  - Installation note link
+  - Return against delivery note
+
+  **Barcode Scanning:**
+  Support for barcode scanners to speed up picking and packing.
+</Accordion>
+
+<Accordion title="Purchase Receipt">
+  Record inbound goods from suppliers.
+
+  **Features:**
+  - Quality inspection
+  - Batch/serial number creation
+  - Rejected quantity handling
+  - Landed cost allocation
+  - Return to supplier
+  - GRN (Goods Receipt Note)
+</Accordion>
+
+## Batch and Serial Number Tracking
+
+### Batch Management
+
+Track items in batches with expiry dates:
+
+<CardGroup cols={2}>
+  <Card title="Batch Creation" icon="layer-group">
+    - Auto or manual batch numbers
+    - Manufacture and expiry dates
+    - Batch-wise pricing
+  </Card>
+  <Card title="Batch Tracking" icon="magnifying-glass">
+    - Batch-wise stock balance
+    - FIFO/FEFO selection
+    - Expiry alerts
+  </Card>
+</CardGroup>
+
+**Use Cases:**
+- Pharmaceuticals
+- Food and beverage
+- Cosmetics
+- Chemicals
+
+### Serial Number Management
+
+Track individual items:
+
+**Features:**
+- Unique serial numbers
+- Warranty tracking
+- AMC/CMC management
+- Complete lifecycle tracking
+- Serial number history
+
+**Typical Items:**
+- Electronics
+- Machinery
+- Vehicles
+- High-value items
+
+<Tip>
+  Serial numbers provide complete traceability - you can track exactly where each item came from and where it went.
+</Tip>
+
+## Stock Reconciliation
+
+Adjust stock to match physical inventory:
+
+<Steps>
+  <Step title="Download Template">
+    Export current stock for selected warehouse
+  </Step>
+  <Step title="Physical Count">
+    Conduct physical stock verification
+  </Step>
+  <Step title="Update Quantities">
+    Enter actual quantities in template
+  </Step>
+  <Step title="Upload and Submit">
+    System creates adjustment entries automatically
+  </Step>
+</Steps>
+
+**Features:**
+- Opening stock entry
+- Cycle counting
+- Valuation adjustment
+- Variance reporting
+
+## Material Request
+
+Initiate procurement or internal transfers:
+
+### Types of Material Requests
+
+| Type | Purpose |
+|------|----------|
+| **Purchase** | Trigger purchase from supplier |
+| **Material Transfer** | Move between warehouses |
+| **Material Issue** | Issue materials |
+| **Manufacture** | Trigger production |
+| **Customer Provided** | Track customer materials |
+
+### Workflow
+
+```mermaid
+graph LR
+    A[Create Request] --> B[Approval]
+    B --> C[Purchase Order]
+    C --> D[Purchase Receipt]
+    D --> E[Material Request Fulfilled]
+```
+
+## Stock Transfer
+
+Move stock between locations:
+
+### Transfer Methods
+
+1. **Direct Transfer**: Immediate transfer via Stock Entry
+2. **In-Transit Warehouse**: Track goods in transit
+3. **Pick List**: Generate pick list for warehouse team
+
+<Accordion title="Pick List Workflow">
+  Optimize warehouse picking operations:
+  
+  1. **Generate Pick List**: From sales orders or delivery notes
+  2. **Batch Assignment**: System suggests optimal batches
+  3. **Picking**: Warehouse team picks items
+  4. **Create Stock Entry**: Auto-create delivery entry
+  
+  **Benefits:**
+  - Faster order fulfillment
+  - Reduced errors
+  - Better warehouse organization
+</Accordion>
+
+## Inventory Valuation
+
+### Valuation Methods
+
+<CardGroup cols={2}>
+  <Card title="FIFO" icon="arrow-right">
+    First In, First Out - oldest stock used first
+  </Card>
+  <Card title="Moving Average" icon="chart-line">
+    Average cost method - cost averaged across all stock
+  </Card>
+</CardGroup>
+
+### Landed Cost
+
+Allocate additional costs to purchased items:
+
+- Freight charges
+- Customs duty
+- Insurance
+- Handling charges
+
+**Landed Cost Voucher:**
+- Allocate costs to multiple receipts
+- Item-wise or proportional distribution
+- Updates item valuation
+
+## Stock Reports
+
+Comprehensive reporting for inventory analysis:
+
+<Accordion title="Stock Balance Report">
+  Real-time stock quantity for all items:
+  - Warehouse-wise balance
+  - Item-wise quantities
+  - Batch/serial details
+  - Valuation amounts
+</Accordion>
+
+<Accordion title="Stock Ledger Report">
+  Complete transaction history:
+  - All stock movements
+  - Date-wise entries
+  - Running balance
+  - Valuation changes
+  - Voucher details
+</Accordion>
+
+<Accordion title="Stock Ageing Report">
+  Identify slow-moving and obsolete stock:
+  - Age brackets (0-30, 30-60, 60-90, 90+ days)
+  - Item-wise aging
+  - Warehouse-wise view
+  - Valuation of aged stock
+</Accordion>
+
+<Accordion title="Stock Analytics">
+  Visual analytics dashboard:
+  - Stock trends over time
+  - Category-wise distribution
+  - Warehouse comparison
+  - Stock turnover ratio
+</Accordion>
+
+## Reorder Level Management
+
+Automate reordering with reorder levels:
+
+### Configuration
+
+- **Reorder Level**: Minimum quantity before reorder
+- **Reorder Qty**: Quantity to order
+- **Lead Time**: Days required for delivery
+- **Safety Stock**: Buffer stock quantity
+
+### Auto Reorder
+
+<Note>
+  Material requests can be automatically created when stock falls below reorder level.
+</Note>
+
+## Quality Inspection
+
+Ensure quality standards:
+
+### Inspection Points
+
+- **Incoming Inspection**: Check purchased goods
+- **Outgoing Inspection**: Verify before delivery
+- **In-Process Inspection**: During manufacturing
+
+### QI Features
+
+- Parameter-based inspection
+- Sample quantity
+- Accept/reject criteria
+- Inspection reports
+- Block transactions on rejection
+
+## Packing Management
+
+### Packing Slip
+
+Generate detailed packing slips:
+
+- Package-wise item list
+- Net and gross weight
+- Package dimensions
+- Shipping marks
+
+### Product Bundle
+
+Handle items packed together:
+
+- Define bundle components
+- Auto-explode on delivery
+- Stock maintained for components
+
+## Stock Reservation
+
+Reserve stock for specific orders:
+
+**Features:**
+- Reserve against sales orders
+- Reserve for projects
+- Prevent over-selling
+- Reservation expiry
+- Unreserve functionality
+
+<Tip>
+  Stock reservation ensures committed orders are fulfilled even during high demand.
+</Tip>
+
+## Perpetual Inventory
+
+Integrate stock with accounting:
+
+**Benefits:**
+- Real-time stock value in accounts
+- Automatic GL entries
+- Accurate cost of goods sold
+- Stock-in-hand account updated
+
+**GL Impact:**
+```
+# On Purchase Receipt
+Stock-in-Hand Dr.
+    To Stock Received But Not Billed Cr.
+
+# On Delivery
+Cost of Goods Sold Dr.
+    To Stock-in-Hand Cr.
+```
+
+## Item Variants
+
+Manage product variations efficiently:
+
+### Variant Attributes
+
+- Size (S, M, L, XL)
+- Color (Red, Blue, Green)
+- Material (Cotton, Polyester)
+- Style (Regular, Slim Fit)
+
+### Template System
+
+Create variants from template:
+1. Define item template
+2. Set variant attributes
+3. Generate all combinations
+4. Individual pricing and stock
+
+## Alternative Items
+
+Define substitute items:
+
+- Suggest alternatives if out of stock
+- Allow selection during transactions
+- Two-way alternatives
+
+## Subcontracting
+
+Send materials to suppliers for processing:
+
+<Steps>
+  <Step title="Create Subcontracting Order">
+    Purchase order with subcontracted items
+  </Step>
+  <Step title="Transfer Materials">
+    Send raw materials to supplier
+  </Step>
+  <Step title="Receive Finished Goods">
+    Receive processed items via purchase receipt
+  </Step>
+  <Step title="Cost Calculation">
+    System calculates total cost automatically
+  </Step>
+</Steps>
+
+## Stock Settings
+
+Configure stock module behavior:
+
+| Setting | Description |
+|---------|-------------|
+| **Item Naming** | Auto naming series |
+| **Default Valuation** | FIFO or Moving Average |
+| **Allow Negative Stock** | Permit negative quantities |
+| **Auto Indent** | Auto-create material requests |
+| **Tolerance** | Over-receipt/delivery percentage |
+| **Freeze Stock** | Freeze stock on specified date |
+
+<Tip>
+  The stock module provides real-time visibility into inventory levels, movements, and valuation across all locations.
+</Tip>

@@ -1,0 +1,455 @@
+---
+title: Global Settings
+description: Configure system-wide defaults, currency settings, and global preferences in ERPNext
+---
+
+Global settings in ERPNext control system-wide behavior, default values, and preferences that apply across all modules and companies.
+
+## Global Defaults
+
+The Global Defaults doctype manages system-wide default values that are applied throughout ERPNext.
+
+### Accessing Global Defaults
+
+<Steps>
+  <Step title="Navigate to Global Defaults">
+    Go to **Home > Setup > Settings > Global Defaults** or search for "Global Defaults".
+  </Step>
+  
+  <Step title="Configure Default Values">
+    Set default values for:
+    - Default Company
+    - Default Currency
+    - Country
+    - Distance Unit
+  </Step>
+  
+  <Step title="Save Changes">
+    Click **Save** to apply settings system-wide.
+  </Step>
+</Steps>
+
+### Key Settings
+
+```python
+# From global_defaults.py:12-21
+keydict = {
+    # "key in defaults": "key in Global Defaults"
+    "company": "default_company",
+    "currency": "default_currency",
+    "country": "country",
+    "hide_currency_symbol": "hide_currency_symbol",
+    "account_url": "account_url",
+    "disable_rounded_total": "disable_rounded_total",
+    "disable_in_words": "disable_in_words",
+}
+```
+
+## Currency and Display Settings
+
+### Default Currency
+
+<Note>
+  The default currency is automatically enabled when set in Global Defaults:
+  ```python
+  # From global_defaults.py:63-65
+  if self.default_currency:
+      frappe.db.set_value("Currency", self.default_currency, "enabled", 1)
+  ```
+</Note>
+
+### Hide Currency Symbol
+
+Control whether currency symbols are displayed in amounts:
+
+- **No**: Display currency symbols (e.g., "$1,000.00")
+- **Yes**: Hide currency symbols (e.g., "1,000.00")
+
+### Disable Rounded Total
+
+When enabled, this setting hides rounded total fields across all transaction documents:
+
+```python
+# From global_defaults.py:23-33
+ROUNDED_TOTAL_DOCTYPES = (
+    "Quotation",
+    "Sales Order",
+    "POS Invoice",
+    "Sales Invoice",
+    "Delivery Note",
+    "Supplier Quotation",
+    "Purchase Order",
+    "Purchase Invoice",
+    "Purchase Receipt",
+)
+```
+
+<Accordion title="How Rounded Total Works">
+  ERPNext can round transaction totals to the nearest whole number for easier processing.
+  
+  Example:
+  - Actual Total: $1,234.56
+  - Rounded Total: $1,235.00
+  
+  When **Disable Rounded Total** is checked:
+  - The `base_rounded_total` and `rounded_total` fields are hidden
+  - Property setters are created for all affected DocTypes
+  - POS Profiles are automatically updated
+  
+  ```python
+  # From global_defaults.py:77-114
+  def toggle_rounded_total(self):
+      for doctype in ROUNDED_TOTAL_DOCTYPES:
+          make_property_setter(
+              doctype,
+              "base_rounded_total",
+              "hidden",
+              cint(self.disable_rounded_total),
+              "Check",
+              validate_fields_for_doctype=False,
+          )
+  ```
+</Accordion>
+
+### Disable In Words
+
+Hide amount-in-words fields (e.g., "One Thousand Two Hundred Thirty-Four Dollars and Fifty-Six Cents"):
+
+```python
+# From global_defaults.py:116-134
+def toggle_in_words(self):
+    for doctype in ROUNDED_TOTAL_DOCTYPES:
+        make_property_setter(
+            doctype,
+            "in_words",
+            "hidden",
+            cint(self.disable_in_words),
+            "Check",
+            validate_fields_for_doctype=False,
+        )
+```
+
+<Note>
+  Changes to display settings automatically create property setters that hide or show fields across all affected DocTypes.
+</Note>
+
+## Currency Exchange Settings
+
+Configure how ERPNext fetches and manages currency exchange rates.
+
+### Accessing Currency Exchange Settings
+
+<Steps>
+  <Step title="Navigate to Currency Exchange Settings">
+    Go to **Home > Accounting > Settings > Currency Exchange Settings**.
+  </Step>
+  
+  <Step title="Configure API Endpoint">
+    Set up the external API for fetching exchange rates. ERPNext uses Frankfurter by default:
+    
+    ```python
+    # From install.py:77-90
+    ces = frappe.get_single("Currency Exchange Settings")
+    ces.api_endpoint = "https://api.frankfurter.dev/v1/{transaction_date}"
+    ces.append("result_key", {"key": "rates"})
+    ces.append("result_key", {"key": "{to_currency}"})
+    ces.append("req_params", {"key": "base", "value": "{from_currency}"})
+    ces.append("req_params", {"key": "symbols", "value": "{to_currency}"})
+    ```
+  </Step>
+  
+  <Step title="Enable Stale Rate Settings (Optional)">
+    Configure whether to allow stale exchange rates and set the threshold in days.
+  </Step>
+  
+  <Step title="Configure Pegged Currencies (Optional)">
+    Set up currencies that are pegged to other currencies for automatic rate calculation.
+  </Step>
+</Steps>
+
+### Exchange Rate Lookup Process
+
+```python
+# From utils.py:94-139
+@frappe.whitelist()
+def get_exchange_rate(from_currency, to_currency, transaction_date=None, args=None):
+    if not (from_currency and to_currency):
+        return
+    if from_currency == to_currency:
+        return 1
+    
+    if not transaction_date:
+        transaction_date = nowdate()
+    
+    currency_settings = frappe.get_cached_doc("Accounts Settings")
+    allow_stale_rates = currency_settings.get("allow_stale")
+    
+    filters = [
+        ["date", "<=", get_datetime_str(transaction_date)],
+        ["from_currency", "=", from_currency],
+        ["to_currency", "=", to_currency],
+    ]
+    
+    if not allow_stale_rates:
+        stale_days = currency_settings.get("stale_days")
+        checkpoint_date = add_days(transaction_date, -stale_days)
+        filters.append(["date", ">", get_datetime_str(checkpoint_date)])
+```
+
+The system follows this hierarchy:
+1. Check Currency Exchange table for manual entries
+2. Check for pegged currency relationships
+3. Fetch from external API (if configured)
+4. Cache the result for 6 hours
+
+### Pegged Currencies
+
+Pegged currencies are automatically configured during installation:
+
+```python
+# From install.py:272-302
+currencies_to_add = [
+    {"source_currency": "AED", "pegged_against": "USD", "pegged_exchange_rate": 3.6725},
+    {"source_currency": "BHD", "pegged_against": "USD", "pegged_exchange_rate": 0.376},
+    {"source_currency": "JOD", "pegged_against": "USD", "pegged_exchange_rate": 0.709},
+    {"source_currency": "OMR", "pegged_against": "USD", "pegged_exchange_rate": 0.3845},
+    {"source_currency": "QAR", "pegged_against": "USD", "pegged_exchange_rate": 3.64},
+    {"source_currency": "SAR", "pegged_against": "USD", "pegged_exchange_rate": 3.75},
+]
+```
+
+## System Settings
+
+### Session Defaults
+
+Configure which values are stored in user sessions:
+
+```python
+# From install.py:179-182
+def add_company_to_session_defaults():
+    settings = frappe.get_single("Session Default Settings")
+    settings.append("session_defaults", {"ref_doctype": "Company"})
+    settings.save()
+```
+
+Session defaults allow users to set preferred values (like Company or Fiscal Year) that persist across their session.
+
+### Accounts Settings
+
+<Accordion title="Key Accounts Settings">
+  Navigate to **Home > Accounting > Settings > Accounts Settings** to configure:
+  
+  - **Allow Stale Exchange Rates**: Whether to accept old exchange rates
+  - **Stale Days**: Number of days before an exchange rate is considered stale
+  - **Freeze Accounting Transactions**: Enable/disable account freezing
+  - **Role Allowed to Set Frozen Accounts**: Who can modify freeze settings
+  - **Allow Pegged Currencies Exchange Rates**: Enable automatic calculation for pegged currencies
+</Accordion>
+
+### Selling Settings
+
+Configure sales-related defaults:
+
+```python
+# From utils.py:214-222
+def set_defaults_for_tests():
+    defaults = {
+        "customer_group": get_root_of("Customer Group"),
+        "territory": get_root_of("Territory"),
+    }
+    frappe.db.set_single_value("Selling Settings", defaults)
+    for key, value in defaults.items():
+        frappe.db.set_default(key, value)
+```
+
+- Customer Group
+- Territory
+- Sales Order Required for Sales Invoice
+- Delivery Note Required for Sales Invoice
+
+### Stock Settings
+
+Configure inventory-related defaults:
+
+- Default UOM
+- Default Item Group
+- Auto Insert Price List Rate If Missing
+- Allow Negative Stock
+- Auto Material Request
+
+## Print Settings
+
+Custom print settings are added during installation:
+
+```python
+# From install.py:93-120
+def create_print_setting_custom_fields():
+    create_custom_fields({
+        "Print Settings": [
+            {
+                "label": _("Compact Item Print"),
+                "fieldname": "compact_item_print",
+                "fieldtype": "Check",
+                "default": "1",
+                "insert_after": "with_letterhead",
+            },
+            {
+                "label": _("Print UOM after Quantity"),
+                "fieldname": "print_uom_after_quantity",
+                "fieldtype": "Check",
+                "default": "0",
+                "insert_after": "compact_item_print",
+            },
+            {
+                "label": _("Print taxes with zero amount"),
+                "fieldname": "print_taxes_with_zero_amount",
+                "fieldtype": "Check",
+                "default": "0",
+                "insert_after": "allow_print_for_cancelled",
+            },
+        ]
+    })
+```
+
+### Print Format Defaults
+
+ERPNext sets default print formats for key documents:
+
+```python
+# From install.py:305-331
+def set_default_print_formats():
+    default_map = {
+        "Sales Order": "Sales Order with Item Image",
+        "Sales Invoice": "Sales Invoice with Item Image",
+        "Delivery Note": "Delivery Note with Item Image",
+        "Purchase Order": "Purchase Order with Item Image",
+        "Purchase Invoice": "Purchase Invoice with Item Image",
+        "POS Invoice": "POS Invoice with Item Image",
+    }
+```
+
+## Letter Head
+
+Default letter heads are created automatically:
+
+```python
+# From install.py:334-354
+def create_letter_head():
+    letterheads = {
+        "Company Letterhead": "company_letterhead.html",
+        "Company Letterhead - Grey": "company_letterhead_grey.html",
+    }
+    
+    for name, filename in letterheads.items():
+        if not frappe.db.exists("Letter Head", name):
+            content = frappe.read_file(os.path.join(base_path, filename))
+            doc = frappe.get_doc({
+                "doctype": "Letter Head",
+                "letter_head_name": name,
+                "source": "HTML",
+                "content": content,
+                "is_default": 1 if name == "Company Letterhead - Grey" else 0,
+            })
+            doc.insert(ignore_permissions=True)
+```
+
+## Naming Series
+
+Configure document naming patterns for consistent numbering across your organization.
+
+<Steps>
+  <Step title="Navigate to Document Naming Settings">
+    Go to **Home > Setup > Document Naming Settings**.
+  </Step>
+  
+  <Step title="Select DocType">
+    Choose the document type you want to configure (e.g., Sales Invoice, Purchase Order).
+  </Step>
+  
+  <Step title="Configure Naming Pattern">
+    Set naming series like:
+    - `SINV-.YYYY.-` → SINV-2024-00001
+    - `PO-.####` → PO-0001
+    - `{company_abbr}-.SO-.####` → WP-SO-0001
+  </Step>
+</Steps>
+
+<Note>
+  Some document types support the option "Use Posting Datetime for Naming Documents" which includes time in the naming series.
+</Note>
+
+## Best Practices
+
+### Initial Setup
+
+<Steps>
+  <Step title="Set Global Defaults First">
+    Configure default company, currency, and country before creating transactions.
+  </Step>
+  
+  <Step title="Configure Currency Exchange">
+    Set up currency exchange API and add manual rates for commonly used currency pairs.
+  </Step>
+  
+  <Step title="Customize Display Settings">
+    Decide on rounded totals and in-words display based on your business needs.
+  </Step>
+  
+  <Step title="Set Up Print Formats">
+    Configure letter heads and default print formats for professional documents.
+  </Step>
+</Steps>
+
+### Maintenance
+
+<Warning>
+  - Review exchange rates regularly for accuracy
+  - Update pegged currency rates when central banks make changes
+  - Test print formats after updates
+  - Document any custom global settings for future reference
+</Warning>
+
+## API Examples
+
+### Get Exchange Rate
+
+```python
+from erpnext.setup.utils import get_exchange_rate
+
+# Get exchange rate for a specific date
+rate = get_exchange_rate(
+    from_currency="USD",
+    to_currency="EUR",
+    transaction_date="2024-03-01"
+)
+print(f"Exchange rate: {rate}")
+```
+
+### Update Global Defaults
+
+```python
+import frappe
+
+# Get and update Global Defaults
+global_defaults = frappe.get_doc("Global Defaults", "Global Defaults")
+global_defaults.default_company = "Wind Power LLC"
+global_defaults.default_currency = "USD"
+global_defaults.disable_rounded_total = 1
+global_defaults.save()
+```
+
+### Set Session Default
+
+```python
+import frappe
+
+# Set default company for current session
+frappe.db.set_default("company", "Wind Power LLC")
+```
+
+## Related Documentation
+
+- [Company Setup](/setup/company)
+- [User Management](/setup/users)
+- [System Customization](/setup/customization)
+- [Currency Exchange](https://docs.erpnext.com/docs/user/manual/en/accounts/multi-currency-accounting)

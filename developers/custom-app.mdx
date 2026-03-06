@@ -1,0 +1,345 @@
+---
+title: Creating Custom ERPNext Apps
+description: Learn how to create custom Frappe apps that extend ERPNext functionality with your own modules, doctypes, and business logic
+---
+
+Custom apps allow you to extend ERPNext without modifying the core codebase. This approach ensures your customizations remain maintainable across ERPNext upgrades and can be version-controlled independently.
+
+## Understanding Custom Apps
+
+A custom app in the Frappe ecosystem is a standalone Python package that can:
+- Add new doctypes and modules
+- Override or extend existing functionality
+- Implement custom business logic
+- Provide additional API endpoints
+- Add custom reports and dashboards
+
+## Creating a New App
+
+<Steps>
+
+### Step 1: Generate the App
+
+Use Bench to scaffold a new app:
+
+```bash
+bench new-app custom_app
+```
+
+You'll be prompted for:
+- App Title (e.g., "Custom App")
+- App Description
+- App Publisher
+- App Email
+- App License
+
+### Step 2: Review the App Structure
+
+The generated app contains:
+
+```
+custom_app/
+├── custom_app/
+│   ├── __init__.py
+│   ├── hooks.py          # App configuration and hooks
+│   ├── modules.txt       # List of modules
+│   └── config/           # Desk configuration
+├── setup.py              # Python package setup
+├── requirements.txt      # Python dependencies
+└── README.md
+```
+
+### Step 3: Install the App
+
+Install the app on your site:
+
+```bash
+bench --site sitename install-app custom_app
+```
+
+</Steps>
+
+## Configuring hooks.py
+
+The `hooks.py` file is the heart of your app's integration with ERPNext. Here's a practical example:
+
+```python
+app_name = "custom_app"
+app_title = "Custom App"
+app_publisher = "Your Company"
+app_description = "Custom business logic for ERPNext"
+app_icon = "fa fa-star"
+app_color = "blue"
+app_email = "hello@yourcompany.com"
+app_license = "MIT"
+
+# Document Events
+doc_events = {
+    "Sales Invoice": {
+        "before_save": "custom_app.utils.sales_invoice.validate_custom_fields",
+        "on_submit": "custom_app.utils.sales_invoice.update_external_system",
+    },
+    "Customer": {
+        "after_insert": "custom_app.utils.customer.sync_to_crm",
+    }
+}
+
+# Scheduled Events
+scheduler_events = {
+    "daily": [
+        "custom_app.tasks.daily_sync"
+    ],
+    "hourly": [
+        "custom_app.tasks.update_inventory"
+    ]
+}
+
+# Override Whitelisted Methods
+override_whitelisted_methods = {
+    "erpnext.selling.page.point_of_sale.point_of_sale.get_items": "custom_app.overrides.pos.get_items"
+}
+
+# Custom Jinja Filters
+jinja = {
+    "methods": [
+        "custom_app.utils.format_custom_field",
+    ]
+}
+```
+
+## Working with ERPNext
+
+### Extending ERPNext Controllers
+
+Create custom logic that runs alongside ERPNext documents:
+
+```python
+# custom_app/utils/sales_invoice.py
+import frappe
+from frappe import _
+
+def validate_custom_fields(doc, method):
+    """Custom validation for Sales Invoice"""
+    if doc.custom_field_1 and not doc.custom_field_2:
+        frappe.throw(_("Custom Field 2 is required when Custom Field 1 is set"))
+
+def on_submit(doc, method):
+    """Post-submission actions"""
+    # Send data to external API
+    sync_to_external_system(doc)
+    
+def sync_to_external_system(doc):
+    """Send invoice data to external system"""
+    import requests
+    
+    api_url = frappe.db.get_single_value("Custom App Settings", "api_endpoint")
+    response = requests.post(api_url, json=doc.as_dict())
+    
+    if response.status_code != 200:
+        frappe.log_error(f"Sync failed: {response.text}", "External Sync Error")
+```
+
+### Adding Custom API Endpoints
+
+```python
+# custom_app/api.py
+import frappe
+
+@frappe.whitelist()
+def get_customer_analytics(customer):
+    """Custom API endpoint for customer analytics"""
+    return frappe.db.sql("""
+        SELECT 
+            MONTHNAME(posting_date) as month,
+            SUM(grand_total) as total_sales,
+            COUNT(name) as invoice_count
+        FROM `tabSales Invoice`
+        WHERE customer = %s
+            AND docstatus = 1
+        GROUP BY MONTH(posting_date)
+        ORDER BY posting_date DESC
+    """, customer, as_dict=True)
+
+@frappe.whitelist(allow_guest=True)
+def public_product_catalog():
+    """Public API for product catalog"""
+    return frappe.get_all(
+        "Item",
+        filters={"show_in_website": 1},
+        fields=["name", "item_name", "description", "standard_rate"]
+    )
+```
+
+## Installing Apps from Git
+
+<Steps>
+
+### Install from GitHub
+
+```bash
+bench get-app https://github.com/username/custom_app.git
+```
+
+### Install from a specific branch
+
+```bash
+bench get-app https://github.com/username/custom_app.git --branch develop
+```
+
+### Install on a site
+
+```bash
+bench --site sitename install-app custom_app
+```
+
+</Steps>
+
+<Note>
+The `bench get-app` command clones the repository into the `apps` directory and installs Python dependencies. Use `bench install-app` to enable it on specific sites.
+</Note>
+
+## Best Practices
+
+### 1. Use Proper Naming Conventions
+
+- App names should be lowercase with underscores
+- Module names should follow ERPNext conventions
+- Prefix custom fields with your app name: `custom_app_field_name`
+
+### 2. Version Control Custom Fields
+
+Export custom fields as fixtures (see [Fixtures documentation](fixtures)) to version control them:
+
+```python
+# hooks.py
+fixtures = [
+    {
+        "dt": "Custom Field",
+        "filters": [["name", "in", [
+            "Sales Invoice-custom_app_reference",
+            "Customer-custom_app_external_id"
+        ]]]
+    }
+]
+```
+
+### 3. Handle Dependencies Properly
+
+List ERPNext as a dependency in `hooks.py`:
+
+```python
+required_apps = ["erpnext"]
+```
+
+### 4. Write Tests
+
+Create unit tests for custom functionality:
+
+```python
+# custom_app/tests/test_sales_invoice.py
+import frappe
+from frappe.tests import IntegrationTestCase
+
+class TestSalesInvoiceCustom(IntegrationTestCase):
+    def test_custom_validation(self):
+        invoice = frappe.get_doc({
+            "doctype": "Sales Invoice",
+            "customer": "_Test Customer",
+            "custom_app_field": "test_value"
+        })
+        invoice.insert()
+        self.assertEqual(invoice.custom_app_field, "test_value")
+```
+
+### 5. Document Your App
+
+Maintain clear documentation:
+- README.md with installation instructions
+- API documentation for custom endpoints
+- Configuration guide for settings
+
+## Common Use Cases
+
+### Custom Industry Logic
+
+```python
+# Manufacturing industry customization
+doc_events = {
+    "Work Order": {
+        "before_submit": "custom_manufacturing.quality_check.validate_qc",
+        "on_cancel": "custom_manufacturing.inventory.reverse_allocations"
+    }
+}
+```
+
+### Third-Party Integrations
+
+```python
+# E-commerce integration
+doc_events = {
+    "Item": {
+        "on_update": "custom_ecommerce.sync.update_shopify_product"
+    },
+    "Sales Order": {
+        "on_submit": "custom_ecommerce.fulfillment.create_shipment"
+    }
+}
+```
+
+### Custom Reports and Dashboards
+
+Add custom reports in `hooks.py`:
+
+```python
+app_include_js = "custom_app.bundle.js"
+
+# Custom reports will be auto-discovered if placed in:
+# custom_app/custom_app/report/
+```
+
+## Deployment Considerations
+
+<Warning>
+Always test custom apps in a staging environment before deploying to production. Use Bench commands to manage app updates:
+
+```bash
+# Update app from git
+bench update --apps custom_app
+
+# Pull latest changes without updating dependencies
+bench update --pull --apps custom_app
+```
+</Warning>
+
+## Migration and Patches
+
+Create database migrations for schema changes:
+
+```python
+# custom_app/patches.txt
+custom_app.patches.v1_0.add_custom_fields
+custom_app.patches.v1_1.migrate_old_data
+```
+
+```python
+# custom_app/patches/v1_0/add_custom_fields.py
+import frappe
+
+def execute():
+    """Add custom fields to existing documents"""
+    if not frappe.db.exists("Custom Field", "Customer-custom_app_tier"):
+        frappe.get_doc({
+            "doctype": "Custom Field",
+            "dt": "Customer",
+            "fieldname": "custom_app_tier",
+            "label": "Customer Tier",
+            "fieldtype": "Select",
+            "options": "Bronze\nSilver\nGold\nPlatinum"
+        }).insert()
+```
+
+## Related Resources
+
+- [Fixtures Documentation](fixtures) - Version control your customizations
+- [Regional Overrides](regional-overrides) - Country-specific customizations
+- [Frappe Framework Docs](https://frappeframework.com/docs) - Core framework documentation

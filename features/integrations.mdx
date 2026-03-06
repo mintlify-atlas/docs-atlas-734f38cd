@@ -1,0 +1,439 @@
+---
+title: Integration Options
+description: Connect ERPNext with third-party services, payment gateways, and external systems
+---
+
+ERPNext provides extensive integration capabilities to connect with banking services, payment gateways, e-commerce platforms, and custom applications.
+
+## Banking Integrations
+
+### Plaid Integration
+
+Connect your bank accounts directly to ERPNext for automatic transaction synchronization.
+
+<CodeGroup>
+```python Configuration
+# erpnext_integrations/doctype/plaid_settings/plaid_settings.py
+class PlaidSettings(Document):
+    def get_link_token(self):
+        plaid = PlaidConnector()
+        return plaid.get_link_token()
+
+@frappe.whitelist()
+def get_plaid_configuration():
+    if frappe.db.get_single_value("Plaid Settings", "enabled"):
+        plaid_settings = frappe.get_single("Plaid Settings")
+        return {
+            "plaid_env": plaid_settings.plaid_env,
+            "link_token": plaid_settings.get_link_token(),
+            "client_name": frappe.local.site,
+        }
+```
+
+```python Sync Transactions
+# Automatic bank transaction sync
+def sync_transactions(bank, bank_account):
+    last_transaction_date = frappe.db.get_value(
+        "Bank Account", bank_account, "last_integration_date"
+    )
+    
+    if last_transaction_date:
+        start_date = formatdate(last_transaction_date, "YYYY-MM-dd")
+    else:
+        start_date = formatdate(add_months(today(), -12), "YYYY-MM-dd")
+    
+    end_date = formatdate(today(), "YYYY-MM-dd")
+    
+    transactions = get_transactions(
+        bank=bank, 
+        bank_account=bank_account, 
+        start_date=start_date, 
+        end_date=end_date
+    )
+    
+    for transaction in reversed(transactions):
+        new_bank_transaction(transaction)
+```
+</CodeGroup>
+
+**Features:**
+- Automatic bank statement import
+- Multi-bank account support
+- Transaction categorization with tags
+- Real-time balance updates
+- Automatic reconciliation
+- Support for checking, savings, and credit accounts
+
+<Note>
+  Plaid supports 11,000+ financial institutions across North America and Europe. Configure your environment (sandbox, development, production) in Plaid Settings.
+</Note>
+
+### Setting Up Plaid
+
+1. **Get Plaid Credentials**
+   - Sign up at [plaid.com/dashboard](https://dashboard.plaid.com)
+   - Get Client ID and Secret Key
+   - Choose environment (sandbox for testing)
+
+2. **Configure ERPNext**
+   ```python
+   # Setup > Integrations > Plaid Settings
+   plaid_settings = frappe.get_doc("Plaid Settings")
+   plaid_settings.enabled = 1
+   plaid_settings.plaid_client_id = "your_client_id"
+   plaid_settings.plaid_secret = "your_secret"
+   plaid_settings.plaid_env = "production"
+   plaid_settings.automatic_sync = 1  # Enable automatic sync
+   plaid_settings.save()
+   ```
+
+3. **Link Bank Accounts**
+   - Go to Accounts > Bank > Bank Account
+   - Click "Link with Plaid"
+   - Authenticate with your bank
+   - Select accounts to sync
+
+4. **Schedule Automatic Sync**
+   ```python
+   # Runs daily via scheduler
+   def automatic_synchronization():
+       settings = frappe.get_doc("Plaid Settings", "Plaid Settings")
+       if settings.enabled == 1 and settings.automatic_sync == 1:
+           enqueue_synchronization()
+   ```
+
+## Payment Gateway Integrations
+
+Accept online payments through multiple gateways:
+
+<CardGroup cols={2}>
+  <Card title="Stripe" icon="stripe">
+    Credit cards, ACH, and international payments
+  </Card>
+  <Card title="PayPal" icon="paypal">
+    PayPal checkout and Express Checkout
+  </Card>
+  <Card title="Razorpay" icon="indian-rupee-sign">
+    Indian payment gateway with UPI support
+  </Card>
+  <Card title="Braintree" icon="credit-card">
+    PayPal-owned gateway with vault support
+  </Card>
+</CardGroup>
+
+### Payment Request Flow
+
+```python
+# Create payment request for Sales Invoice
+def make_payment_request(**args):
+    pr = frappe.new_doc("Payment Request")
+    pr.payment_gateway_account = args.get("payment_gateway_account")
+    pr.reference_doctype = "Sales Invoice"
+    pr.reference_name = args.get("sales_invoice")
+    pr.grand_total = args.get("grand_total")
+    pr.insert(ignore_permissions=True)
+    pr.submit()
+    
+    # Send payment link via email
+    pr.send_email()
+    return pr
+```
+
+## E-commerce Integrations
+
+### Shopify Integration
+
+Sync products, orders, and customers between ERPNext and Shopify:
+
+```python
+# Shopify webhook handler
+@frappe.whitelist(allow_guest=True)
+def shopify_webhook_handler():
+    data = frappe.request.get_data(as_text=True)
+    webhook_type = frappe.request.headers.get("X-Shopify-Topic")
+    
+    if webhook_type == "orders/create":
+        create_sales_order_from_shopify(json.loads(data))
+    elif webhook_type == "products/update":
+        update_item_from_shopify(json.loads(data))
+```
+
+### WooCommerce Integration
+
+Connect your WooCommerce store:
+- Product sync (items, variants, pricing)
+- Order management
+- Inventory updates
+- Customer data sync
+
+## API Integration Framework
+
+Build custom integrations using ERPNext's REST API:
+
+<CodeGroup>
+```python REST API
+# Create Sales Invoice via API
+import requests
+
+url = "https://your-site.erpnext.com/api/resource/Sales Invoice"
+headers = {
+    "Authorization": "token api_key:api_secret",
+    "Content-Type": "application/json"
+}
+
+data = {
+    "customer": "Customer Name",
+    "items": [
+        {
+            "item_code": "ITEM-001",
+            "qty": 5,
+            "rate": 100
+        }
+    ]
+}
+
+response = requests.post(url, json=data, headers=headers)
+print(response.json())
+```
+
+```python Webhooks
+# Setup webhook for document events
+webhook = frappe.get_doc({
+    "doctype": "Webhook",
+    "webhook_doctype": "Sales Order",
+    "webhook_docevent": "on_submit",
+    "request_url": "https://external-system.com/webhook",
+    "request_method": "POST",
+    "enabled": 1
+})
+webhook.insert()
+```
+
+```javascript JavaScript Client
+// Using frappe.call from client-side
+frappe.call({
+    method: "erpnext.selling.doctype.sales_order.sales_order.make_sales_invoice",
+    args: {
+        source_name: "SO-00001"
+    },
+    callback: function(r) {
+        if (!r.exc) {
+            frappe.msgprint("Sales Invoice created");
+        }
+    }
+});
+```
+</CodeGroup>
+
+## Email & Communication
+
+### Email Campaign Automation
+
+```python
+# erpnext/crm/doctype/email_campaign/email_campaign.py
+class EmailCampaign(Document):
+    def send_campaign_emails(self):
+        for recipient in self.get_recipients():
+            if not recipient.unsubscribed:
+                self.send_email_to_recipient(recipient)
+                recipient.email_sent = 1
+                recipient.save()
+```
+
+**Campaign Features:**
+- Lead nurturing sequences
+- Customer segmentation
+- Email templates with variables
+- Tracking (opens, clicks, unsubscribes)
+- A/B testing support
+
+### Email Digest
+
+Automated summary reports delivered to your inbox:
+
+```python
+# Configure digest settings
+email_digest = frappe.get_doc({
+    "doctype": "Email Digest",
+    "frequency": "Weekly",
+    "recipients": ["manager@example.com"],
+    "income_year_to_date": 1,
+    "bank_balance": 1,
+    "pending_sales_orders": 1,
+    "pending_purchase_orders": 1
+})
+email_digest.insert()
+```
+
+## Third-Party Service Integrations
+
+<Accordion title="Shipping Integrations">
+  **Supported Carriers:**
+  - FedEx
+  - UPS
+  - USPS
+  - DHL
+  - Custom carrier APIs
+
+  **Features:**
+  - Real-time shipping rates
+  - Label generation
+  - Tracking number updates
+  - Delivery notifications
+</Accordion>
+
+<Accordion title="SMS Gateways">
+  Send SMS notifications for:
+  - Order confirmations
+  - Delivery updates
+  - Payment reminders
+  - OTP verification
+
+  Supported providers: Twilio, AWS SNS, custom SMS APIs
+</Accordion>
+
+<Accordion title="Telephony">
+  **Call Center Integration:**
+  ```python
+  # Create call log from telephony system
+  call_log = frappe.get_doc({
+      "doctype": "Call Log",
+      "from": "+1234567890",
+      "to": "+0987654321",
+      "type": "Incoming",
+      "status": "Completed",
+      "duration": 120
+  })
+  call_log.insert()
+  ```
+</Accordion>
+
+## Data Import/Export
+
+### CSV Import
+
+Bulk import data from spreadsheets:
+
+```python
+from frappe.core.doctype.data_import.data_import import import_file
+
+# Import items from CSV
+import_file(
+    doctype="Item",
+    file_path="/path/to/items.csv",
+    import_type="Insert"
+)
+```
+
+### Excel Export
+
+Export reports and data:
+
+```python
+@frappe.whitelist()
+def export_report_to_excel(report_name, filters):
+    from frappe.desk.query_report import run
+    
+    result = run(report_name, filters=filters)
+    return result
+```
+
+## Custom Integration Development
+
+### Creating Custom Connectors
+
+```python
+# Example: Custom ERP Integration
+class CustomERPConnector:
+    def __init__(self, api_key, base_url):
+        self.api_key = api_key
+        self.base_url = base_url
+    
+    def sync_customers(self):
+        customers = self.fetch_customers_from_api()
+        for customer_data in customers:
+            self.create_or_update_customer(customer_data)
+    
+    def fetch_customers_from_api(self):
+        response = requests.get(
+            f"{self.base_url}/customers",
+            headers={"Authorization": f"Bearer {self.api_key}"}
+        )
+        return response.json()
+    
+    def create_or_update_customer(self, data):
+        if frappe.db.exists("Customer", {"external_id": data["id"]}):
+            customer = frappe.get_doc("Customer", {"external_id": data["id"]})
+            customer.customer_name = data["name"]
+            customer.save()
+        else:
+            customer = frappe.get_doc({
+                "doctype": "Customer",
+                "customer_name": data["name"],
+                "external_id": data["id"]
+            })
+            customer.insert()
+```
+
+### Integration Hooks
+
+Use hooks.py to register integrations:
+
+```python
+# hooks.py
+scheduler_events = {
+    "hourly": [
+        "your_app.integrations.sync_with_external_system"
+    ],
+    "daily": [
+        "your_app.integrations.sync_products",
+        "your_app.integrations.sync_inventory"
+    ]
+}
+
+doc_events = {
+    "Sales Order": {
+        "on_submit": "your_app.integrations.send_to_external_system"
+    }
+}
+```
+
+## Integration Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Security" icon="shield-halved">
+    - Store API keys in encrypted fields
+    - Use OAuth 2.0 when available
+    - Implement rate limiting
+    - Validate webhook signatures
+    - Log all integration activities
+  </Card>
+  <Card title="Error Handling" icon="triangle-exclamation">
+    - Implement retry logic with exponential backoff
+    - Log errors in Integration Request
+    - Send failure notifications
+    - Use queues for async processing
+    - Monitor integration health
+  </Card>
+</CardGroup>
+
+<Note>
+  **Performance Tips**
+  
+  - Use background jobs for bulk operations
+  - Implement pagination for large datasets
+  - Cache frequently accessed data
+  - Use database indexes on lookup fields
+  - Monitor API rate limits
+</Note>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Automation" icon="robot" href="/features/automation">
+    Automate workflows and processes
+  </Card>
+  <Card title="Regional Features" icon="globe" href="/features/regional">
+    Country-specific compliance and localization
+  </Card>
+</CardGroup>

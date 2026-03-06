@@ -1,0 +1,296 @@
+---
+title: Reporting Capabilities
+description: Comprehensive reporting system for financial analysis, inventory tracking, and business intelligence in ERPNext
+---
+
+ERPNext provides a powerful reporting engine with pre-built reports across all modules, custom report builder, and advanced analytics capabilities.
+
+## Report Types
+
+ERPNext supports multiple report formats to meet different business needs:
+
+<CardGroup cols={2}>
+  <Card title="Script Reports" icon="code">
+    Python-based reports with complex calculations and custom logic. Full access to the database and business logic layer.
+  </Card>
+  <Card title="Query Reports" icon="database">
+    SQL-based reports for direct database queries with filters and user permissions.
+  </Card>
+  <Card title="Report Builder" icon="wand-magic-sparkles">
+    No-code report creation through the UI. Drag-and-drop interface for selecting fields and applying filters.
+  </Card>
+  <Card title="Print Formats" icon="print">
+    Customizable templates for invoices, delivery notes, and other documents.
+  </Card>
+</CardGroup>
+
+## Financial Reports
+
+Comprehensive financial reporting with real-time data and multi-company consolidation.
+
+### Core Financial Statements
+
+<Accordion title="Balance Sheet">
+  The Balance Sheet report provides a snapshot of your company's financial position:
+
+  ```python
+  # Located at: accounts/report/balance_sheet/balance_sheet.py
+  def execute(filters=None):
+      # Get assets, liabilities, and equity
+      asset = get_data(filters.company, "Asset", "Debit", period_list, filters=filters)
+      liability = get_data(filters.company, "Liability", "Credit", period_list, filters=filters)
+      equity = get_data(filters.company, "Equity", "Credit", period_list, filters=filters)
+      
+      # Calculate provisional profit/loss
+      provisional_profit_loss = get_provisional_profit_loss(
+          asset, liability, equity, period_list, filters.company
+      )
+  ```
+
+  **Features:**
+  - Multi-period comparison (monthly, quarterly, yearly)
+  - Accumulated values view
+  - Growth analysis
+  - Chart visualization
+  - Multiple currency support
+</Accordion>
+
+<Accordion title="Profit & Loss Statement">
+  Track income and expenses with detailed breakdowns by account, cost center, or project.
+
+  **Key Metrics:**
+  - Gross profit margin
+  - Operating profit
+  - Net profit
+  - EBITDA calculations
+</Accordion>
+
+<Accordion title="Cash Flow Statement">
+  Monitor cash movements across operating, investing, and financing activities.
+</Accordion>
+
+### Receivables & Payables
+
+<CodeGroup>
+```python Accounts Receivable
+# accounts/report/accounts_receivable/accounts_receivable.py
+class ReceivablePayableReport:
+    def run(self, args):
+        # Fetch payment ledger entries
+        self.prepare_ple_query()
+        
+        # Build voucher balances
+        for ple in self.ple_entries:
+            self.init_voucher_balance(ple)
+            self.update_voucher_balance(ple)
+        
+        # Set ageing buckets (0-30, 30-60, 60-90, 90-120, 120+)
+        self.set_ageing(row)
+```
+
+```python Payment Terms
+# Handle payment terms split
+def allocate_outstanding_based_on_payment_terms(self, row):
+    self.get_payment_terms(row)
+    for term in row.payment_terms:
+        if not term.paid:
+            self.allocate_closing_to_term(row, term, "paid")
+        if term.outstanding:
+            self.allocate_closing_to_term(row, term, "credit_note")
+```
+</CodeGroup>
+
+**Report Features:**
+- Customer/Supplier-wise outstanding
+- Ageing analysis with configurable buckets
+- Payment terms breakdown
+- Future payments tracking
+- Sales person filtering
+- Territory and customer group filters
+- Export to Excel/PDF
+
+<Note>
+  The Accounts Receivable report uses Payment Ledger Entries for accurate real-time tracking. You can configure fetch methods in Accounts Settings: Buffered Cursor, Unbuffered Cursor, or Raw SQL.
+</Note>
+
+## Inventory Reports
+
+Track stock movements, valuations, and inventory health:
+
+<CardGroup cols={2}>
+  <Card title="Stock Balance" icon="boxes-stacked">
+    Real-time inventory levels by warehouse, item group, or category.
+  </Card>
+  <Card title="Stock Ledger" icon="book">
+    Complete transaction history with serial and batch tracking.
+  </Card>
+  <Card title="Stock Ageing" icon="clock">
+    Identify slow-moving and obsolete inventory.
+  </Card>
+  <Card title="Batch Expiry Status" icon="calendar-xmark">
+    Monitor batch expiration dates to prevent stockouts.
+  </Card>
+</CardGroup>
+
+## Manufacturing Reports
+
+Production planning and cost analysis:
+
+- **BOM Explorer**: Multi-level bill of materials breakdown
+- **Work Order Summary**: Production status and completion tracking
+- **Production Analytics**: Efficiency metrics and downtime analysis
+- **BOM Variance Report**: Compare planned vs actual costs
+- **Cost of Poor Quality**: Track production defects and rework costs
+
+## Custom Report Builder
+
+Create reports without coding:
+
+1. **Select DocType**: Choose the primary document type
+2. **Add Fields**: Pick fields to display in columns
+3. **Set Filters**: Define default filters and user-selectable filters
+4. **Group & Sort**: Configure grouping and sorting logic
+5. **Save & Share**: Save the report and assign permissions
+
+```javascript
+// Example: Custom Sales Report
+{
+  "doctype": "Sales Invoice",
+  "fields": [
+    "customer",
+    "posting_date",
+    "total",
+    "outstanding_amount"
+  ],
+  "filters": [
+    ["Sales Invoice", "docstatus", "=", "1"],
+    ["Sales Invoice", "posting_date", "between", ["2024-01-01", "2024-12-31"]]
+  ]
+}
+```
+
+## Financial Report Templates
+
+Pre-configured templates for complex financial analysis:
+
+- **Financial Ratios Analysis**: Liquidity, profitability, and efficiency ratios
+- **Horizontal Balance Sheet**: Year-over-year comparison
+- **Vertical Analysis**: Common-size financial statements
+- **Trend Analysis**: Multi-period trends with growth percentages
+
+## Report Permissions
+
+Control access with role-based permissions:
+
+```python
+# Example: accounts_receivable.json
+{
+  "report_type": "Script Report",
+  "roles": [
+    {"role": "Accounts Manager"},
+    {"role": "Accounts User"}
+  ],
+  "apply_user_permissions": 1
+}
+```
+
+## Exporting & Scheduling
+
+<CardGroup cols={3}>
+  <Card title="Excel Export" icon="file-excel">
+    Export with formatting and formulas preserved
+  </Card>
+  <Card title="PDF Generation" icon="file-pdf">
+    Print-ready reports with letterheads
+  </Card>
+  <Card title="Email Reports" icon="envelope">
+    Schedule automatic email delivery
+  </Card>
+</CardGroup>
+
+### Auto Email Reports
+
+Schedule reports to be sent automatically:
+
+```python
+# Setup Email Digest
+from erpnext.setup.doctype.email_digest.email_digest import send
+
+# Configure frequency: Daily, Weekly, Monthly
+email_digest = frappe.get_doc("Email Digest", digest_name)
+email_digest.frequency = "Weekly"
+email_digest.save()
+```
+
+## Report Charts
+
+Visualize data with built-in charting:
+
+```python
+# Example: Balance Sheet Chart
+chart = {
+    "data": {
+        "labels": [col.get("label") for col in chart_columns],
+        "datasets": [
+            {"name": "Assets", "values": asset_data},
+            {"name": "Liabilities", "values": liability_data},
+            {"name": "Equity", "values": equity_data}
+        ]
+    },
+    "type": "bar",  # or "line", "pie", "percentage"
+    "fieldtype": "Currency"
+}
+```
+
+## Best Practices
+
+<Note>
+  **Performance Optimization**
+  
+  - Use indexes on filtered fields
+  - Limit date ranges for large datasets
+  - Use Report Builder for simple queries
+  - Cache frequently accessed reports
+  - Consider materialized views for complex calculations
+</Note>
+
+<CardGroup cols={2}>
+  <Card title="Report Security">
+    - Apply user permissions at row level
+    - Restrict sensitive financial data
+    - Audit report access logs
+    - Use print format permissions
+  </Card>
+  <Card title="Data Accuracy">
+    - Reconcile with General Ledger
+    - Validate accounting periods
+    - Check for posting date issues
+    - Review voucher cancellations
+  </Card>
+</CardGroup>
+
+## API Access
+
+Generate reports programmatically:
+
+```python
+import frappe
+
+@frappe.whitelist()
+def get_custom_report_data(filters):
+    from erpnext.accounts.report.accounts_receivable import accounts_receivable
+    
+    columns, data = accounts_receivable.execute(filters)
+    return {"columns": columns, "data": data}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Automation" icon="robot" href="/features/automation">
+    Automate report generation and distribution
+  </Card>
+  <Card title="Integrations" icon="plug" href="/features/integrations">
+    Connect with BI tools and data warehouses
+  </Card>
+</CardGroup>

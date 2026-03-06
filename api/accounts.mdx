@@ -1,0 +1,419 @@
+---
+title: Accounts API
+description: API functions for ERPNext Accounts module including payments, invoices, and fiscal year management
+---
+
+# Accounts Module API
+
+The Accounts module provides comprehensive financial management APIs for handling payments, invoices, journal entries, and accounting operations.
+
+## Payment Entry APIs
+
+### get_payment_entry
+
+Create a payment entry document against various transaction types like invoices, orders, and expenses.
+
+<CodeGroup>
+```python Python
+import frappe
+
+# Create payment entry from Sales Invoice
+payment_entry = frappe.call(
+    "erpnext.accounts.doctype.payment_entry.payment_entry.get_payment_entry",
+    dt="Sales Invoice",
+    dn="SINV-0001",
+    party_amount=1000,
+    bank_account="Cash - C"
+)
+```
+
+```javascript JavaScript
+frappe.call({
+    method: "erpnext.accounts.doctype.payment_entry.payment_entry.get_payment_entry",
+    args: {
+        dt: "Sales Invoice",
+        dn: "SINV-0001",
+        party_amount: 1000,
+        bank_account: "Cash - C"
+    },
+    callback: function(r) {
+        console.log(r.message);
+    }
+});
+```
+</CodeGroup>
+
+<ParamField path="dt" type="string" required>
+  Document type (e.g., "Sales Invoice", "Purchase Invoice", "Sales Order", "Purchase Order")
+</ParamField>
+
+<ParamField path="dn" type="string" required>
+  Document name/ID
+</ParamField>
+
+<ParamField path="party_amount" type="float" default="null">
+  Amount to be paid/received
+</ParamField>
+
+<ParamField path="bank_account" type="string" default="null">
+  Bank or cash account for the transaction
+</ParamField>
+
+<ParamField path="bank_amount" type="float" default="null">
+  Amount in bank account currency
+</ParamField>
+
+<ParamField path="party_type" type="string" default="null">
+  Party type: "Customer" or "Supplier"
+</ParamField>
+
+<ParamField path="payment_type" type="string" default="null">
+  Payment type: "Receive", "Pay", or "Internal Transfer"
+</ParamField>
+
+<ParamField path="reference_date" type="date" default="null">
+  Reference date for payment
+</ParamField>
+
+<ResponseField name="payment_entry" type="dict">
+  A new Payment Entry document with pre-filled values
+  <Accordion title="Response Properties">
+    - `payment_type`: Type of payment (Receive/Pay/Internal Transfer)
+    - `company`: Company name
+    - `posting_date`: Payment posting date
+    - `paid_from`: Source account
+    - `paid_to`: Destination account
+    - `paid_amount`: Amount to be paid
+    - `received_amount`: Amount to be received
+    - `references`: List of reference documents
+  </Accordion>
+</ResponseField>
+
+---
+
+## General Ledger APIs
+
+### get_balance_on
+
+Get the balance of an account on a specific date with optional filters for party, cost center, and finance book.
+
+```python
+frappe.call(
+    "erpnext.accounts.utils.get_balance_on",
+    account="Debtors - C",
+    date="2024-03-31",
+    party_type="Customer",
+    party="CUST-0001",
+    company="Company A"
+)
+```
+
+<ParamField path="account" type="string" default="null">
+  Account name
+</ParamField>
+
+<ParamField path="date" type="date" default="null">
+  Date for balance calculation
+</ParamField>
+
+<ParamField path="party_type" type="string" default="null">
+  Party type: "Customer", "Supplier", "Employee"
+</ParamField>
+
+<ParamField path="party" type="string" default="null">
+  Party name
+</ParamField>
+
+<ParamField path="company" type="string" default="null">
+  Company name
+</ParamField>
+
+<ParamField path="in_account_currency" type="bool" default="true">
+  Return balance in account currency
+</ParamField>
+
+<ParamField path="cost_center" type="string" default="null">
+  Cost center for filtering
+</ParamField>
+
+<ParamField path="finance_book" type="string" default="null">
+  Finance book for filtering
+</ParamField>
+
+<ResponseField name="balance" type="float">
+  Account balance as of the specified date
+</ResponseField>
+
+---
+
+## Fiscal Year APIs
+
+### get_fiscal_year
+
+Retrieve fiscal year information for a given date and company.
+
+```python
+fiscal_year = frappe.call(
+    "erpnext.accounts.utils.get_fiscal_year",
+    date="2024-03-15",
+    company="Company A"
+)
+# Returns: ("2023-2024", "2023-04-01", "2024-03-31")
+```
+
+<ParamField path="date" type="date" default="null">
+  Transaction date
+</ParamField>
+
+<ParamField path="fiscal_year" type="string" default="null">
+  Fiscal year name
+</ParamField>
+
+<ParamField path="company" type="string" default="null">
+  Company name
+</ParamField>
+
+<ParamField path="as_dict" type="bool" default="false">
+  Return as dictionary instead of tuple
+</ParamField>
+
+<ResponseField name="fiscal_year" type="tuple">
+  Returns tuple: (fiscal_year_name, year_start_date, year_end_date)
+</ResponseField>
+
+---
+
+## Outstanding Invoices
+
+### get_outstanding_invoices
+
+Get list of outstanding invoices for a party with optional filters.
+
+```python
+invoices = frappe.call(
+    "erpnext.accounts.utils.get_outstanding_invoices",
+    party_type="Customer",
+    party="CUST-0001",
+    account=["Debtors - C"],
+    posting_date="2024-03-31"
+)
+```
+
+<ParamField path="party_type" type="string" required>
+  Party type: "Customer" or "Supplier"
+</ParamField>
+
+<ParamField path="party" type="string" required>
+  Party name
+</ParamField>
+
+<ParamField path="account" type="list" required>
+  List of account names
+</ParamField>
+
+<ParamField path="posting_date" type="date" default="null">
+  Filter invoices up to this date
+</ParamField>
+
+<ParamField path="min_outstanding" type="float" default="null">
+  Minimum outstanding amount
+</ParamField>
+
+<ParamField path="max_outstanding" type="float" default="null">
+  Maximum outstanding amount
+</ParamField>
+
+<ResponseField name="invoices" type="list">
+  List of outstanding invoice details
+  <Accordion title="Invoice Object Properties">
+    - `voucher_no`: Invoice number
+    - `voucher_type`: Document type
+    - `posting_date`: Invoice date
+    - `invoice_amount`: Total invoice amount
+    - `outstanding_amount`: Pending amount
+    - `due_date`: Payment due date
+    - `currency`: Invoice currency
+  </Accordion>
+</ResponseField>
+
+---
+
+## Account Management
+
+### get_account_currency
+
+Get the currency of an account.
+
+```python
+currency = frappe.call(
+    "erpnext.accounts.doctype.account.account.get_account_currency",
+    account="Cash - USD - C"
+)
+# Returns: "USD"
+```
+
+<ParamField path="account" type="string" required>
+  Account name
+</ParamField>
+
+<ResponseField name="currency" type="string">
+  Currency code of the account
+</ResponseField>
+
+---
+
+### get_children
+
+Get child accounts for tree view navigation.
+
+```python
+accounts = frappe.call(
+    "erpnext.accounts.utils.get_children",
+    doctype="Account",
+    parent="Assets - C",
+    company="Company A",
+    is_root=False
+)
+```
+
+<ParamField path="doctype" type="string" required>
+  Document type: "Account" or "Cost Center"
+</ParamField>
+
+<ParamField path="parent" type="string" required>
+  Parent account name
+</ParamField>
+
+<ParamField path="company" type="string" required>
+  Company name
+</ParamField>
+
+<ParamField path="is_root" type="bool" default="false">
+  Whether fetching root level accounts
+</ParamField>
+
+<ResponseField name="accounts" type="list">
+  List of child accounts with hierarchy information
+</ResponseField>
+
+---
+
+## Reconciliation APIs
+
+### reconcile_against_document
+
+Reconcile payment entries against invoices or other documents.
+
+```python
+frappe.call(
+    "erpnext.accounts.utils.reconcile_against_document",
+    args=[{
+        "voucher_type": "Payment Entry",
+        "voucher_no": "PAY-0001",
+        "against_voucher_type": "Sales Invoice",
+        "against_voucher": "SINV-0001",
+        "allocated_amount": 1000,
+        "account": "Debtors - C",
+        "party_type": "Customer",
+        "party": "CUST-0001"
+    }]
+)
+```
+
+<ParamField path="args" type="list" required>
+  List of reconciliation entries
+</ParamField>
+
+<ResponseField name="result" type="null">
+  Updates the payment entry and linked documents
+</ResponseField>
+
+---
+
+## Company Defaults
+
+### get_company_default
+
+Get default value for a company field.
+
+```python
+default_account = frappe.call(
+    "erpnext.accounts.utils.get_company_default",
+    company="Company A",
+    fieldname="default_cash_account"
+)
+```
+
+<ParamField path="company" type="string" required>
+  Company name
+</ParamField>
+
+<ParamField path="fieldname" type="string" required>
+  Field name from Company doctype
+</ParamField>
+
+<ResponseField name="value" type="string">
+  Default value for the specified field
+</ResponseField>
+
+---
+
+## Usage Examples
+
+### Creating a Payment Entry
+
+```python
+import frappe
+
+# Get payment entry template
+payment = frappe.get_doc(
+    frappe.call(
+        "erpnext.accounts.doctype.payment_entry.payment_entry.get_payment_entry",
+        dt="Sales Invoice",
+        dn="SINV-00001",
+        party_amount=5000
+    )
+)
+
+# Modify if needed
+payment.reference_no = "CHQ-12345"
+payment.reference_date = "2024-03-15"
+
+# Save and submit
+payment.insert()
+payment.submit()
+```
+
+### Checking Account Balance
+
+```python
+import frappe
+from frappe.utils import nowdate
+
+# Get current balance
+balance = frappe.call(
+    "erpnext.accounts.utils.get_balance_on",
+    account="Cash - C",
+    date=nowdate(),
+    company="Company A"
+)
+
+print(f"Current Cash Balance: {balance}")
+```
+
+### Getting Outstanding Invoices
+
+```python
+import frappe
+
+# Get all outstanding invoices for a customer
+outstanding = frappe.call(
+    "erpnext.accounts.utils.get_outstanding_invoices",
+    party_type="Customer",
+    party="CUST-00001",
+    account=["Debtors - C"]
+)
+
+for invoice in outstanding:
+    print(f"Invoice: {invoice['voucher_no']}, Outstanding: {invoice['outstanding_amount']}")
+```

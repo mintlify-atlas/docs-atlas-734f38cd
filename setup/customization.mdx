@@ -1,0 +1,616 @@
+---
+title: System Customization
+description: Customize ERPNext doctypes, fields, forms, and workflows to match your business processes
+---
+
+ERPNext provides powerful customization capabilities that allow you to tailor the system to your specific business needs without modifying the core code.
+
+## Custom Fields
+
+Custom fields allow you to add new fields to existing DocTypes without modifying the core schema.
+
+### Adding Custom Fields via UI
+
+<Steps>
+  <Step title="Navigate to Customize Form">
+    Go to **Home > Customization > Form > Customize Form** or search for "Customize Form".
+  </Step>
+  
+  <Step title="Select DocType">
+    Choose the DocType you want to customize (e.g., Sales Invoice, Customer).
+  </Step>
+  
+  <Step title="Add New Field">
+    Click **Add Row** in the Fields table and configure:
+    - **Label**: Display name for the field
+    - **Type**: Field type (Data, Link, Select, Text, etc.)
+    - **Options**: For Link/Select fields, specify the linked DocType or options
+    - **Insert After**: Position in the form
+    - **Mandatory**: Whether the field is required
+  </Step>
+  
+  <Step title="Update and Save">
+    Click **Update** to apply changes. The new field appears immediately in the form.
+  </Step>
+</Steps>
+
+<Note>
+  Custom fields are prefixed with `custom_` in the database to distinguish them from standard fields.
+</Note>
+
+### Adding Custom Fields Programmatically
+
+Use the `create_custom_fields` function for bulk field creation:
+
+```python
+from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
+
+# Example from install.py:93-120
+create_custom_fields({
+    "Print Settings": [
+        {
+            "label": "Compact Item Print",
+            "fieldname": "compact_item_print",
+            "fieldtype": "Check",
+            "default": "1",
+            "insert_after": "with_letterhead",
+        },
+        {
+            "label": "Print UOM after Quantity",
+            "fieldname": "print_uom_after_quantity",
+            "fieldtype": "Check",
+            "default": "0",
+            "insert_after": "compact_item_print",
+        },
+    ],
+    "Customer": [
+        {
+            "label": "Customer Segment",
+            "fieldname": "custom_customer_segment",
+            "fieldtype": "Select",
+            "options": "\nEnterprise\nSMB\nStartup",
+            "insert_after": "customer_group",
+        },
+    ]
+})
+```
+
+### Field Types
+
+| Field Type | Description | Use Case |
+|------------|-------------|----------|
+| **Data** | Single line text | Short text values |
+| **Text** | Multi-line text | Long descriptions |
+| **Select** | Dropdown with predefined options | Status, categories |
+| **Link** | Link to another DocType | Foreign key relationships |
+| **Table** | Child table | Line items, details |
+| **Check** | Checkbox (0 or 1) | Boolean flags |
+| **Date** | Date picker | Dates without time |
+| **Datetime** | Date and time picker | Timestamps |
+| **Currency** | Formatted currency | Monetary values |
+| **Int** | Integer number | Quantities, counts |
+| **Float** | Decimal number | Measurements |
+| **Attach** | File upload | Documents, images |
+| **Attach Image** | Image upload with preview | Photos, logos |
+| **Code** | Code editor | JSON, scripts |
+| **HTML** | Rich text editor | Formatted content |
+
+## Property Setters
+
+Property Setters override default properties of DocType fields without creating custom fields.
+
+### Using Property Setters
+
+```python
+from frappe.custom.doctype.property_setter.property_setter import make_property_setter
+
+# Hide a field
+make_property_setter(
+    doctype="Sales Order",
+    fieldname="shipping_rule",
+    property="hidden",
+    value=1,
+    property_type="Check"
+)
+
+# Make a field mandatory
+make_property_setter(
+    doctype="Customer",
+    fieldname="tax_id",
+    property="reqd",
+    value=1,
+    property_type="Check"
+)
+
+# Change field label
+make_property_setter(
+    doctype="Item",
+    fieldname="item_code",
+    property="label",
+    value="SKU",
+    property_type="Data"
+)
+```
+
+### Common Property Overrides
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `hidden` | Check | Hide/show field |
+| `reqd` | Check | Make field mandatory |
+| `read_only` | Check | Make field read-only |
+| `allow_on_submit` | Check | Allow editing after submit |
+| `label` | Data | Change field label |
+| `default` | Data | Set default value |
+| `options` | Text | Update field options |
+| `depends_on` | Data | Conditional display |
+| `precision` | Select | Decimal places for numbers |
+
+### Example: Toggle Rounded Total
+
+```python
+# From global_defaults.py:77-96
+def toggle_rounded_total(self):
+    for doctype in ROUNDED_TOTAL_DOCTYPES:
+        make_property_setter(
+            doctype,
+            "base_rounded_total",
+            "hidden",
+            cint(self.disable_rounded_total),
+            "Check",
+            validate_fields_for_doctype=False,
+        )
+        make_property_setter(
+            doctype,
+            "rounded_total",
+            "hidden",
+            cint(self.disable_rounded_total),
+            "Check",
+            validate_fields_for_doctype=False,
+        )
+```
+
+## Custom Scripts
+
+Client Scripts add custom JavaScript to DocType forms for dynamic behavior.
+
+### Creating Client Scripts
+
+<Steps>
+  <Step title="Navigate to Client Script">
+    Go to **Home > Customization > Client Script**.
+  </Step>
+  
+  <Step title="Create New Script">
+    Click **New** and configure:
+    - **Name**: Descriptive name for the script
+    - **DocType**: The DocType this script applies to
+    - **Script Type**: When the script runs (Form, List, etc.)
+  </Step>
+  
+  <Step title="Write JavaScript Code">
+    Add your custom logic using Frappe's client-side API.
+  </Step>
+  
+  <Step title="Save and Test">
+    Save the script and test it by opening the target DocType form.
+  </Step>
+</Steps>
+
+### Client Script Examples
+
+<Accordion title="Auto-calculate Field Values">
+  ```javascript
+  frappe.ui.form.on('Sales Order', {
+      qty: function(frm, cdt, cdn) {
+          let item = locals[cdt][cdn];
+          item.amount = item.qty * item.rate;
+          frm.refresh_field('items');
+      },
+      rate: function(frm, cdt, cdn) {
+          let item = locals[cdt][cdn];
+          item.amount = item.qty * item.rate;
+          frm.refresh_field('items');
+      }
+  });
+  ```
+</Accordion>
+
+<Accordion title="Add Custom Buttons">
+  ```javascript
+  frappe.ui.form.on('Sales Invoice', {
+      refresh: function(frm) {
+          if (frm.doc.docstatus === 1) {
+              frm.add_custom_button('Send Reminder', function() {
+                  frappe.call({
+                      method: 'my_app.api.send_payment_reminder',
+                      args: {
+                          invoice: frm.doc.name
+                      },
+                      callback: function(r) {
+                          frappe.msgprint('Reminder sent successfully');
+                      }
+                  });
+              });
+          }
+      }
+  });
+  ```
+</Accordion>
+
+<Accordion title="Filter Link Fields">
+  ```javascript
+  frappe.ui.form.on('Purchase Order', {
+      supplier: function(frm) {
+          // Filter items based on supplier
+          frm.set_query('item_code', 'items', function() {
+              return {
+                  filters: {
+                      'supplier': frm.doc.supplier
+                  }
+              };
+          });
+      }
+  });
+  ```
+</Accordion>
+
+<Accordion title="Validate Before Save">
+  ```javascript
+  frappe.ui.form.on('Sales Order', {
+      validate: function(frm) {
+          if (frm.doc.delivery_date < frappe.datetime.get_today()) {
+              frappe.throw('Delivery date cannot be in the past');
+          }
+          
+          let total_qty = 0;
+          $.each(frm.doc.items || [], function(i, item) {
+              total_qty += item.qty;
+          });
+          
+          if (total_qty > 1000) {
+              frappe.throw('Total quantity cannot exceed 1000 units');
+          }
+      }
+  });
+  ```
+</Accordion>
+
+## Server Scripts
+
+Server Scripts add custom Python logic that runs on the server.
+
+### Creating Server Scripts
+
+<Steps>
+  <Step title="Navigate to Server Script">
+    Go to **Home > Customization > Server Script**.
+  </Step>
+  
+  <Step title="Create New Script">
+    Configure:
+    - **Script Type**: DocType Event, API, or Permission Query
+    - **DocType**: Target DocType (for DocType Events)
+    - **Event**: before_save, after_insert, on_submit, etc.
+  </Step>
+  
+  <Step title="Write Python Code">
+    Add your custom logic using Frappe's server-side API.
+  </Step>
+</Steps>
+
+### Server Script Examples
+
+<Accordion title="Auto-generate Serial Numbers">
+  ```python
+  # Event: before_save
+  # DocType: Item
+  
+  if not doc.item_code and doc.item_group:
+      # Get the last item code for this group
+      last_item = frappe.db.get_value(
+          "Item",
+          {"item_group": doc.item_group},
+          "item_code",
+          order_by="creation desc"
+      )
+      
+      if last_item:
+          # Extract number and increment
+          last_num = int(last_item.split("-")[-1])
+          doc.item_code = f"{doc.item_group}-{last_num + 1:04d}"
+      else:
+          doc.item_code = f"{doc.item_group}-0001"
+  ```
+</Accordion>
+
+<Accordion title="Send Email Notifications">
+  ```python
+  # Event: on_submit
+  # DocType: Purchase Order
+  
+  if doc.grand_total > 10000:
+      # Send notification for large orders
+      frappe.sendmail(
+          recipients=["manager@example.com"],
+          subject=f"Large Purchase Order: {doc.name}",
+          message=f"""A purchase order worth {doc.grand_total} has been submitted.
+          
+          Supplier: {doc.supplier}
+          Total Amount: {doc.grand_total}
+          
+          Please review: {frappe.utils.get_url_to_form("Purchase Order", doc.name)}
+          """
+      )
+  ```
+</Accordion>
+
+<Accordion title="Update Related Documents">
+  ```python
+  # Event: on_submit
+  # DocType: Sales Order
+  
+  # Update customer's last order date
+  frappe.db.set_value(
+      "Customer",
+      doc.customer,
+      "custom_last_order_date",
+      doc.transaction_date
+  )
+  
+  # Calculate and update total orders
+  total_orders = frappe.db.count(
+      "Sales Order",
+      {"customer": doc.customer, "docstatus": 1}
+  )
+  
+  frappe.db.set_value(
+      "Customer",
+      doc.customer,
+      "custom_total_orders",
+      total_orders
+  )
+  ```
+</Accordion>
+
+## Workflows
+
+Workflows define approval processes and state transitions for documents.
+
+### Creating a Workflow
+
+<Steps>
+  <Step title="Create Workflow">
+    Go to **Home > Customization > Workflow** and click **New**.
+  </Step>
+  
+  <Step title="Configure Basic Settings">
+    - **Document Type**: Select the DocType (e.g., Leave Application)
+    - **Workflow Name**: Descriptive name
+    - **Is Active**: Enable the workflow
+  </Step>
+  
+  <Step title="Define States">
+    Add workflow states:
+    - Draft
+    - Pending Approval
+    - Approved
+    - Rejected
+  </Step>
+  
+  <Step title="Define Transitions">
+    Configure allowed state changes:
+    - From Draft to Pending Approval (Submit)
+    - From Pending Approval to Approved (Approve)
+    - From Pending Approval to Rejected (Reject)
+  </Step>
+  
+  <Step title="Assign Roles">
+    For each transition, specify which roles can perform that action.
+  </Step>
+</Steps>
+
+<Note>
+  Workflows override the standard Submit/Cancel workflow. Once a workflow is active, documents follow the workflow states instead.
+</Note>
+
+## Custom DocTypes
+
+Create entirely new DocTypes for business processes not covered by standard ERPNext.
+
+### Creating Custom DocTypes
+
+<Steps>
+  <Step title="Navigate to DocType List">
+    Go to **Home > Customization > DocType**.
+  </Step>
+  
+  <Step title="Create New DocType">
+    Click **New** and configure:
+    - **Name**: DocType name (e.g., "Warranty Claim")
+    - **Module**: Which module it belongs to
+    - **Is Submittable**: Whether documents can be submitted and cancelled
+    - **Is Child Table**: Whether it's used as a child table in other DocTypes
+  </Step>
+  
+  <Step title="Add Fields">
+    Add fields to define the structure of your DocType.
+  </Step>
+  
+  <Step title="Configure Permissions">
+    Set which roles can create, read, update, and delete documents.
+  </Step>
+  
+  <Step title="Save">
+    Save the DocType. ERPNext automatically creates the database table.
+  </Step>
+</Steps>
+
+## Print Formats
+
+Customize how documents are printed or exported as PDF.
+
+### Creating Print Formats
+
+<Steps>
+  <Step title="Navigate to Print Format Builder">
+    Open any document and click the printer icon, then select "Edit Format" or go to **Home > Customization > Print Format**.
+  </Step>
+  
+  <Step title="Choose Format Type">
+    - **Simple**: Drag-and-drop builder
+    - **Standard**: Jinja template
+    - **HTML**: Custom HTML/CSS
+  </Step>
+  
+  <Step title="Customize Layout">
+    Add/remove fields, change styling, add headers/footers.
+  </Step>
+  
+  <Step title="Save and Set as Default (Optional)">
+    Save the print format and optionally set it as the default for the DocType.
+  </Step>
+</Steps>
+
+### Print Format Example
+
+```html
+<div class="print-format">
+    <div class="row">
+        <div class="col-xs-6">
+            <h3>{{ doc.customer }}</h3>
+            <p>{{ doc.customer_address }}</p>
+        </div>
+        <div class="col-xs-6 text-right">
+            <h3>{{ doc.name }}</h3>
+            <p>Date: {{ doc.get_formatted("transaction_date") }}</p>
+        </div>
+    </div>
+    
+    <table class="table table-bordered">
+        <thead>
+            <tr>
+                <th>Item</th>
+                <th>Qty</th>
+                <th>Rate</th>
+                <th>Amount</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in doc.items %}
+            <tr>
+                <td>{{ item.item_name }}</td>
+                <td>{{ item.qty }}</td>
+                <td>{{ item.get_formatted("rate") }}</td>
+                <td>{{ item.get_formatted("amount") }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    
+    <div class="row">
+        <div class="col-xs-6">
+            <p>Total in words: {{ doc.in_words }}</p>
+        </div>
+        <div class="col-xs-6 text-right">
+            <h4>Grand Total: {{ doc.get_formatted("grand_total") }}</h4>
+        </div>
+    </div>
+</div>
+```
+
+## Best Practices
+
+### Customization Strategy
+
+<Warning>
+  **Never modify core files**. Always use ERPNext's customization tools:
+  - Custom Fields
+  - Property Setters
+  - Client/Server Scripts
+  - Workflows
+  
+  Modifying core files makes upgrades difficult and can break your system.
+</Warning>
+
+### Performance Considerations
+
+<Note>
+  - Minimize database queries in client scripts
+  - Use server scripts for heavy processing
+  - Cache frequently accessed data
+  - Index custom fields that are frequently queried
+  - Test customizations with production-like data volumes
+</Note>
+
+### Documentation
+
+- Document all customizations in a central location
+- Include the business reason for each customization
+- Note dependencies between customizations
+- Keep track of which customizations affect which DocTypes
+
+### Testing
+
+<Steps>
+  <Step title="Test in Development First">
+    Always test customizations in a development environment before production.
+  </Step>
+  
+  <Step title="Test All Scenarios">
+    Test create, read, update, delete, submit, cancel, and amend operations.
+  </Step>
+  
+  <Step title="Test Permissions">
+    Verify that role-based access control works as expected.
+  </Step>
+  
+  <Step title="Test Performance">
+    Ensure customizations don't slow down the system.
+  </Step>
+</Steps>
+
+## Example: Company Custom Links
+
+ERPNext adds custom company fields to framework DocTypes:
+
+```python
+# From install.py:146-176
+def create_custom_company_links():
+    """Add link fields to Company in Email Account and Communication.
+    
+    These DocTypes are provided by the Frappe Framework but need to be associated
+    with a company in ERPNext to allow for multitenancy.
+    """
+    create_custom_fields({
+        "Email Account": [
+            {
+                "label": _("Company"),
+                "fieldname": "company",
+                "fieldtype": "Link",
+                "options": "Company",
+                "insert_after": "email_id",
+            },
+        ],
+        "Communication": [
+            {
+                "label": _("Company"),
+                "fieldname": "company",
+                "fieldtype": "Link",
+                "options": "Company",
+                "insert_after": "email_account",
+                "fetch_from": "email_account.company",
+                "read_only": 1,
+            },
+        ],
+    })
+```
+
+This enables multi-company isolation for emails and communications.
+
+## Related Documentation
+
+- [Company Setup](/setup/company)
+- [User Management](/setup/users)
+- [Global Settings](/setup/settings)
+- [Frappe Framework Documentation](https://frappeframework.com/docs)

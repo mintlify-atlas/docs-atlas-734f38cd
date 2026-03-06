@@ -1,0 +1,554 @@
+---
+title: Regional & Localization
+description: Country-specific features, tax compliance, and localization for global operations in ERPNext
+---
+
+ERPNext provides comprehensive regional support with country-specific tax rules, compliance features, and localized formats for businesses operating globally.
+
+## Supported Countries
+
+ERPNext includes built-in support for multiple countries with specific regulatory requirements:
+
+<CardGroup cols={3}>
+  <Card title="United Arab Emirates" icon="flag">
+    VAT compliance, Emirates-specific features
+  </Card>
+  <Card title="Saudi Arabia" icon="flag">
+    Zakat, VAT, and e-invoicing
+  </Card>
+  <Card title="India" icon="flag">
+    GST, TDS, TCS compliance
+  </Card>
+  <Card title="Italy" icon="flag">
+    E-invoicing (FatturaPA)
+  </Card>
+  <Card title="Turkey" icon="flag">
+    E-invoice and E-archive
+  </Card>
+  <Card title="South Africa" icon="flag">
+    VAT compliance
+  </Card>
+  <Card title="United States" icon="flag">
+    State tax, 1099 forms
+  </Card>
+  <Card title="Germany" icon="flag">
+    DATEV export, GoBD compliance
+  </Card>
+  <Card title="France" icon="flag">
+    FEC export
+  </Card>
+</CardGroup>
+
+## UAE VAT Compliance
+
+Comprehensive support for VAT compliance in the United Arab Emirates:
+
+### Setup Custom Fields
+
+<CodeGroup>
+```python VAT Fields
+# regional/united_arab_emirates/setup.py
+def make_custom_fields():
+    custom_fields = {
+        "Item": [
+            dict(
+                fieldname="tax_code",
+                label="Tax Code",
+                fieldtype="Data",
+                insert_after="item_group"
+            ),
+            dict(
+                fieldname="is_zero_rated",
+                label="Is Zero Rated",
+                fieldtype="Check",
+                insert_after="tax_code"
+            ),
+            dict(
+                fieldname="is_exempt",
+                label="Is Exempt",
+                fieldtype="Check",
+                insert_after="is_zero_rated"
+            )
+        ],
+        "Sales Invoice": [
+            dict(
+                fieldname="company_trn",
+                label="Company TRN",
+                fieldtype="Read Only",
+                fetch_from="company.tax_id"
+            ),
+            dict(
+                fieldname="customer_name_in_arabic",
+                label="Customer Name in Arabic",
+                fieldtype="Read Only",
+                fetch_from="customer.customer_name_in_arabic"
+            ),
+            dict(
+                fieldname="vat_emirate",
+                label="VAT Emirate",
+                fieldtype="Select",
+                options="\nAbu Dhabi\nAjman\nDubai\nFujairah\nRas Al Khaimah\nSharjah\nUmm Al Quwain"
+            )
+        ]
+    }
+    create_custom_fields(custom_fields)
+```
+
+```python Purchase Invoice
+purchase_invoice_fields = [
+    dict(
+        fieldname="recoverable_standard_rated_expenses",
+        label="Recoverable Standard Rated Expenses (AED)",
+        fieldtype="Currency",
+        default="0"
+    ),
+    dict(
+        fieldname="reverse_charge",
+        label="Reverse Charge Applicable",
+        fieldtype="Select",
+        options="Y\nN",
+        default="N"
+    ),
+    dict(
+        fieldname="recoverable_reverse_charge",
+        label="Recoverable Reverse Charge (Percentage)",
+        fieldtype="Percent",
+        default="100.000",
+        depends_on="eval:doc.reverse_charge=='Y'"
+    )
+]
+```
+</CodeGroup>
+
+### VAT Reports
+
+**UAE VAT 201 Report**
+
+Generate VAT 201 return with all required boxes:
+
+```python
+# Standard-Rated Supplies (Box 1)
+# Zero-Rated Supplies (Box 2)  
+# Exempt Supplies (Box 3)
+# Goods Imported into UAE (Box 4)
+# Adjustments to Standard-Rated Supplies (Box 5)
+# Input Tax (Box 6)
+# Adjustments to Input Tax (Box 7)
+# Net VAT Due (Box 8)
+```
+
+### Print Formats
+
+<Accordion title="Tax Invoice">
+  Standard tax invoice format compliant with UAE FTA requirements:
+  - Tax Registration Number (TRN)
+  - Invoice date and number
+  - Customer details with TRN
+  - Item-wise tax breakdown
+  - Total tax amount
+  - Payment terms
+</Accordion>
+
+<Accordion title="Simplified Tax Invoice">
+  For B2C transactions under 10,000 AED:
+  - Company TRN
+  - Date and time of supply
+  - Total amount including VAT
+  - VAT amount
+</Accordion>
+
+<Note>
+  **Arabic Support**: Enable Arabic names for customers and suppliers. The system automatically displays bilingual invoices when configured.
+</Note>
+
+## India GST Compliance
+
+### GST Categories
+
+```python
+# Tax categories for GST
+gst_categories = [
+    "Registered Regular",
+    "Registered Composition",
+    "Unregistered",
+    "SEZ",
+    "Overseas",
+    "UIN Holders"
+]
+
+# GST account heads
+gst_accounts = [
+    "CGST",  # Central GST
+    "SGST",  # State GST
+    "IGST",  # Integrated GST
+    "Cess"   # Additional Cess
+]
+```
+
+### GSTR Reports
+
+Generate GST returns directly from ERPNext:
+
+- **GSTR-1**: Outward supplies (Sales)
+- **GSTR-2**: Inward supplies (Purchases)
+- **GSTR-3B**: Monthly summary return
+- **GSTR-4**: Composition scheme return
+- **GSTR-9**: Annual return
+
+### E-Way Bill Integration
+
+```python
+# Generate e-way bill for interstate transactions
+def generate_eway_bill(sales_invoice):
+    if sales_invoice.is_interstate_transaction():
+        eway_bill = {
+            "supply_type": "Outward",
+            "sub_type": "Supply",
+            "doc_type": "Invoice",
+            "doc_no": sales_invoice.name,
+            "doc_date": sales_invoice.posting_date,
+            "from_gstin": sales_invoice.company_gstin,
+            "to_gstin": sales_invoice.customer_gstin,
+            "total_value": sales_invoice.grand_total,
+            "cgst_value": sales_invoice.total_cgst,
+            "sgst_value": sales_invoice.total_sgst,
+            "igst_value": sales_invoice.total_igst
+        }
+        return generate_eway_bill_api(eway_bill)
+```
+
+### TDS (Tax Deducted at Source)
+
+```python
+# TDS calculation on purchase invoices
+def calculate_tds(purchase_invoice):
+    supplier = frappe.get_doc("Supplier", purchase_invoice.supplier)
+    
+    if supplier.tax_withholding_category:
+        tds_account = get_tds_account(
+            supplier.tax_withholding_category,
+            purchase_invoice.company
+        )
+        
+        tds_rate = get_tds_rate(
+            supplier.tax_withholding_category,
+            purchase_invoice.posting_date
+        )
+        
+        tds_amount = purchase_invoice.net_total * (tds_rate / 100)
+        
+        # Add TDS to taxes
+        purchase_invoice.append("taxes", {
+            "charge_type": "On Net Total",
+            "account_head": tds_account,
+            "description": f"TDS - {supplier.tax_withholding_category}",
+            "rate": -tds_rate,
+            "tax_amount": -tds_amount
+        })
+```
+
+## Italy E-Invoicing (FatturaPA)
+
+Electronic invoicing compliance for Italy:
+
+### XML Generation
+
+```python
+# regional/italy/utils.py
+def sales_invoice_on_submit(doc, method):
+    # Generate FatturaPA XML
+    if doc.company_address and is_italian_company(doc.company):
+        xml_data = generate_fatturapa_xml(doc)
+        
+        # Create file attachment
+        file_name = f"{doc.name}.xml"
+        save_file(
+            file_name,
+            xml_data,
+            doc.doctype,
+            doc.name,
+            is_private=1
+        )
+        
+        # Send to Sistema di Interscambio (SDI)
+        if doc.submit_to_sdi:
+            send_to_sdi(file_name, xml_data)
+```
+
+### Required Fields
+
+<CardGroup cols={2}>
+  <Card title="Company Data">
+    - Fiscal code (Codice Fiscale)
+    - VAT number (Partita IVA)
+    - Legal form (Natura Giuridica)
+    - Tax regime (Regime Fiscale)
+  </Card>
+  <Card title="Customer Data">
+    - Recipient code (Codice Destinatario)
+    - PEC (Certified email)
+    - Tax identification
+    - Address details
+  </Card>
+</CardGroup>
+
+## Saudi Arabia Compliance
+
+### Zakat Calculation
+
+```python
+# Calculate Zakat based on lunar calendar
+def calculate_zakat(company, fiscal_year):
+    # Get financial data
+    assets = get_total_assets(company, fiscal_year)
+    liabilities = get_total_liabilities(company, fiscal_year)
+    
+    # Calculate zakatable base
+    zakatable_base = assets - liabilities
+    
+    # Apply 2.5% rate
+    zakat_amount = zakatable_base * 0.025
+    
+    return {
+        "zakatable_base": zakatable_base,
+        "zakat_amount": zakat_amount,
+        "fiscal_year": fiscal_year
+    }
+```
+
+### E-Invoicing (ZATCA)
+
+Compliance with ZATCA (Zakat, Tax and Customs Authority):
+
+- **Phase 1**: Generation and storage of e-invoices
+- **Phase 2**: Integration with ZATCA platform
+- QR code generation for invoices
+- Cryptographic stamps
+- Real-time reporting
+
+## Address Templates
+
+Customize address formats by country:
+
+```jinja2
+{# UAE Address Template #}
+{{ address_line1 }}<br>
+{% if address_line2 %}{{ address_line2 }}<br>{% endif %}
+{{ emirate }}<br>
+United Arab Emirates<br>
+{% if phone %}Tel: {{ phone }}<br>{% endif %}
+
+{# India Address Template #}
+{{ address_line1 }}
+{% if address_line2 %}, {{ address_line2 }}{% endif %}<br>
+{{ city }} - {{ pincode }}<br>
+{{ state }}, India<br>
+GSTIN: {{ gstin }}
+```
+
+## Multi-Currency Support
+
+<Accordion title="Exchange Rate Management">
+  Automatic exchange rate fetching and manual overrides:
+  
+  ```python
+  # Get exchange rate for transaction date
+  def get_exchange_rate(from_currency, to_currency, transaction_date):
+      exchange_rate = frappe.db.get_value(
+          "Currency Exchange",
+          {
+              "from_currency": from_currency,
+              "to_currency": to_currency,
+              "date": transaction_date
+          },
+          "exchange_rate"
+      )
+      
+      if not exchange_rate:
+          # Fetch from API
+          exchange_rate = fetch_exchange_rate_api(
+              from_currency, 
+              to_currency, 
+              transaction_date
+          )
+      
+      return exchange_rate
+  ```
+</Accordion>
+
+<Accordion title="Exchange Gain/Loss">
+  Automatic calculation of realized and unrealized gains/losses:
+  
+  - Realized: On payment against invoices
+  - Unrealized: Period-end revaluation
+  - Separate GL accounts for forex gains and losses
+</Accordion>
+
+## Fiscal Year Configuration
+
+Support for different fiscal year calendars:
+
+```python
+fiscal_year_configs = {
+    "India": {"year_start_date": "04-01"},
+    "United States": {"year_start_date": "01-01"},
+    "United Kingdom": {"year_start_date": "04-06"},
+    "Australia": {"year_start_date": "07-01"},
+    "UAE": {"year_start_date": "01-01"}
+}
+```
+
+## Import/Export Documentation
+
+### Customs Declaration
+
+Generate required export documentation:
+
+- Commercial Invoice
+- Packing List
+- Certificate of Origin
+- Bill of Lading/Airway Bill
+- Shipping Bill
+- Letter of Credit documents
+
+### HS Codes
+
+Track Harmonized System codes for items:
+
+```python
+# Add HS code to Item
+item.custom_hs_code = "8471.30.00"
+item.custom_country_of_origin = "China"
+item.save()
+```
+
+## Banking Formats
+
+Support for country-specific payment formats:
+
+<CardGroup cols={2}>
+  <Card title="SEPA (Europe)">
+    SEPA Credit Transfer XML generation for European payments
+  </Card>
+  <Card title="BACS (UK)">
+    UK Bankers' Automated Clearing Services format
+  </Card>
+  <Card title="ACH (USA)">
+    Automated Clearing House file generation
+  </Card>
+  <Card title="GIRO (Singapore)">
+    Interbank GIRO payment format
+  </Card>
+</CardGroup>
+
+## Payroll Localization
+
+Country-specific payroll components:
+
+```python
+# Example: UAE End of Service Benefits
+def calculate_gratuity(employee):
+    years_of_service = get_years_of_service(employee)
+    last_salary = get_last_drawn_salary(employee)
+    
+    if years_of_service < 1:
+        return 0
+    elif years_of_service < 5:
+        # 21 days per year for first 5 years
+        days = years_of_service * 21
+    else:
+        # 21 days for first 5 years + 30 days thereafter
+        days = (5 * 21) + ((years_of_service - 5) * 30)
+    
+    # Cap at 2 years salary
+    daily_wage = last_salary / 30
+    gratuity = min(daily_wage * days, last_salary * 24)
+    
+    return gratuity
+```
+
+## Language Support
+
+<CardGroup cols={3}>
+  <Card title="Arabic" icon="language">
+    RTL support, Arabic number formatting
+  </Card>
+  <Card title="Chinese" icon="language">
+    Simplified and Traditional Chinese
+  </Card>
+  <Card title="Spanish" icon="language">
+    Latin American and European Spanish
+  </Card>
+  <Card title="French" icon="language">
+    European and Canadian French
+  </Card>
+  <Card title="German" icon="language">
+    German language and formats
+  </Card>
+  <Card title="Portuguese" icon="language">
+    Brazilian and European Portuguese
+  </Card>
+</CardGroup>
+
+## Setting Up Regional Features
+
+<Steps>
+  <Step title="Select Country">
+    Setup Wizard > Company > Select your country
+  </Step>
+  
+  <Step title="Run Setup Script">
+    ```python
+    # Automatically runs country-specific setup
+    from erpnext.regional.united_arab_emirates.setup import setup
+    setup(company="Your Company")
+    ```
+  </Step>
+  
+  <Step title="Configure Taxes">
+    Setup tax accounts and templates specific to your region
+  </Step>
+  
+  <Step title="Enable Print Formats">
+    Activate country-compliant invoice templates
+  </Step>
+</Steps>
+
+## Best Practices
+
+<Note>
+  **Compliance Guidelines**
+  
+  - Keep software updated for latest regulatory changes
+  - Consult local tax advisors for complex scenarios
+  - Test in staging before enabling in production
+  - Maintain audit trails for all tax transactions
+  - Regular backups before fiscal year-end
+  - Archive tax documents as per local requirements
+</Note>
+
+<CardGroup cols={2}>
+  <Card title="Data Security">
+    - Encrypt sensitive tax information
+    - Role-based access for compliance data
+    - Audit logs for all changes
+    - Secure backup procedures
+  </Card>
+  <Card title="Reporting">
+    - Schedule regular compliance reports
+    - Validate data before submission
+    - Keep copies of all filings
+    - Document any adjustments
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Reporting" icon="chart-line" href="/features/reporting">
+    Generate compliance reports
+  </Card>
+  <Card title="Automation" icon="robot" href="/features/automation">
+    Automate tax calculations and filings
+  </Card>
+</CardGroup>

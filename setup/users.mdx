@@ -1,0 +1,392 @@
+---
+title: User Management
+description: Configure users, roles, permissions, and employee records in ERPNext
+---
+
+User management in ERPNext involves creating user accounts, assigning roles, and linking users to employees for access control and workflow management.
+
+## User Types
+
+ERPNext distinguishes between different types of users:
+
+| User Type | Description | Desk Access |
+|-----------|-------------|-------------|
+| **System User** | Internal employees with desk access | Yes |
+| **Website User** | External users (customers, suppliers) | No |
+| **Customer** | Portal access for customers | No |
+| **Supplier** | Portal access for suppliers | No |
+
+<Note>
+  The roles "Customer" and "Supplier" have `desk_access = 0` by default, as configured in `install.py:242-245`.
+</Note>
+
+## Creating Users
+
+<Steps>
+  <Step title="Navigate to User List">
+    Go to **Home > Users and Permissions > User** or search for "User" in the search bar.
+  </Step>
+  
+  <Step title="Create New User">
+    Click **New** to create a new user record.
+  </Step>
+  
+  <Step title="Enter User Details">
+    Fill in the required information:
+    - **Email**: Used as username and for notifications (must be unique)
+    - **First Name**: User's first name
+    - **Last Name**: User's last name
+    - **Send Welcome Email**: Check to send login credentials
+  </Step>
+  
+  <Step title="Assign Roles">
+    Add roles in the **Roles** table to grant permissions. Multiple roles can be assigned to one user.
+  </Step>
+  
+  <Step title="Set User Permissions (Optional)">
+    Restrict user access to specific companies, warehouses, or other documents using User Permissions.
+  </Step>
+  
+  <Step title="Save and Activate">
+    Save the user. By default, the user is enabled and can log in immediately.
+  </Step>
+</Steps>
+
+## Employee Records
+
+Employee records link system users to HR data and enable employee-specific permissions.
+
+### Creating an Employee
+
+<Steps>
+  <Step title="Navigate to Employee List">
+    Go to **Home > Human Resources > Employee** or search for "Employee".
+  </Step>
+  
+  <Step title="Fill Basic Information">
+    - **First Name, Middle Name, Last Name**: Employee's full name
+    - **Company**: The company the employee belongs to
+    - **Date of Joining**: Start date
+    - **Status**: Active, Inactive, Suspended, or Left
+  </Step>
+  
+  <Step title="Link to User (Optional)">
+    Set **User ID** to link this employee to a system user account. This enables:
+    - Expense claims
+    - Leave applications
+    - Attendance tracking
+    - Task assignments
+  </Step>
+  
+  <Step title="Configure User Permissions">
+    Check **Create User Permission** to automatically restrict the user's access to:
+    - Only this employee record
+    - Only the assigned company
+  </Step>
+</Steps>
+
+### Employee-User Linking
+
+```python
+# From employee.py:86-99
+def update_user_permissions(self):
+    if not self.has_value_changed("user_id") and not self.has_value_changed("create_user_permission"):
+        return
+    
+    employee_user_permission_exists = frappe.db.exists(
+        "User Permission", {"allow": "Employee", "for_value": self.name, "user": self.user_id}
+    )
+    
+    if employee_user_permission_exists and not self.create_user_permission:
+        remove_user_permission("Employee", self.name, self.user_id)
+        remove_user_permission("Company", self.company, self.user_id)
+    elif not employee_user_permission_exists and self.create_user_permission:
+        add_user_permission("Employee", self.name, self.user_id)
+        add_user_permission("Company", self.company, self.user_id)
+```
+
+<Note>
+  When **Create User Permission** is enabled, the system automatically adds user permissions for both the Employee record and the Company. This restricts the user to only see data for their company.
+</Note>
+
+### Employee Status Validation
+
+```python
+# From employee.py:32-44
+def validate(self):
+    from erpnext.controllers.status_updater import validate_status
+    
+    validate_status(self.status, ["Active", "Inactive", "Suspended", "Left"])
+    
+    self.employee = self.name
+    self.set_employee_name()
+    self.validate_date()
+    self.validate_email()
+    self.validate_status()
+    self.validate_reports_to()
+    self.set_preferred_email()
+    self.validate_preferred_email()
+```
+
+Employee status must be one of: **Active**, **Inactive**, **Suspended**, or **Left**.
+
+## Role Profiles
+
+Role Profiles are pre-configured sets of roles for common job functions.
+
+### Default Role Profiles
+
+ERPNext creates these role profiles during installation:
+
+```python
+# From install.py:357-383
+DEFAULT_ROLE_PROFILES = {
+    "Inventory": [
+        "Stock User",
+        "Stock Manager",
+        "Item Manager",
+    ],
+    "Manufacturing": [
+        "Stock User",
+        "Manufacturing User",
+        "Manufacturing Manager",
+    ],
+    "Accounts": [
+        "Accounts User",
+        "Accounts Manager",
+    ],
+    "Sales": [
+        "Sales User",
+        "Stock User",
+        "Sales Manager",
+    ],
+    "Purchase": [
+        "Item Manager",
+        "Stock User",
+        "Purchase User",
+        "Purchase Manager",
+    ],
+}
+```
+
+### Assigning Role Profiles
+
+<Steps>
+  <Step title="Open User Record">
+    Navigate to the user you want to assign a role profile to.
+  </Step>
+  
+  <Step title="Select Role Profile">
+    In the **Role Profile** field, select a pre-configured profile (e.g., "Accounts", "Sales", "Purchase").
+  </Step>
+  
+  <Step title="Automatic Role Assignment">
+    All roles in the profile are automatically added to the user's Roles table.
+  </Step>
+</Steps>
+
+<Note>
+  Role Profiles are templates. Changing a role profile after assignment won't automatically update existing users - you need to reassign the profile.
+</Note>
+
+## User Permissions
+
+User Permissions restrict which documents a user can access based on specific values.
+
+### Common Use Cases
+
+<Accordion title="Restrict by Company">
+  Limit a user to only see transactions for one company in a multi-company setup.
+  
+  ```python
+  from frappe.permissions import add_user_permission
+  
+  add_user_permission("Company", "Wind Power LLC", "user@example.com")
+  ```
+</Accordion>
+
+<Accordion title="Restrict by Warehouse">
+  Limit a warehouse user to only their assigned warehouse.
+  
+  ```python
+  add_user_permission("Warehouse", "Stores - WP", "warehouse.user@example.com")
+  ```
+</Accordion>
+
+<Accordion title="Restrict by Territory">
+  Sales users can only see customers and transactions in their territory.
+  
+  ```python
+  add_user_permission("Territory", "North America", "sales.rep@example.com")
+  ```
+</Accordion>
+
+<Accordion title="Restrict by Employee">
+  Employees can only view their own records and related documents.
+  
+  ```python
+  # This is done automatically when "Create User Permission" is checked on Employee
+  add_user_permission("Employee", "EMP-0001", "employee@example.com")
+  ```
+</Accordion>
+
+### Creating User Permissions
+
+<Steps>
+  <Step title="Navigate to User Permissions">
+    Go to **Home > Users and Permissions > User Permission**.
+  </Step>
+  
+  <Step title="Create New Permission">
+    Click **New** and fill in:
+    - **User**: Select the user to restrict
+    - **Allow**: Select the DocType (e.g., Company, Warehouse)
+    - **For Value**: Select the specific document (e.g., "Wind Power LLC")
+    - **Is Default**: Check if this should be the default value in forms
+  </Step>
+  
+  <Step title="Apply to Specific DocTypes (Optional)">
+    Use the **Applicable For** table to apply this permission only to specific DocTypes.
+  </Step>
+</Steps>
+
+<Warning>
+  User Permissions are cumulative. If a user has permissions for multiple values of the same DocType, they can access all of them.
+</Warning>
+
+## Permission Rules
+
+Permission rules define what actions users with specific roles can perform on DocTypes.
+
+### Understanding Permission Levels
+
+| Permission | Description |
+|------------|-------------|
+| **Read** | View documents |
+| **Write** | Edit existing documents |
+| **Create** | Create new documents |
+| **Delete** | Delete documents |
+| **Submit** | Submit documents to lock them |
+| **Cancel** | Cancel submitted documents |
+| **Amend** | Amend cancelled documents |
+
+### Customizing Role Permissions
+
+<Steps>
+  <Step title="Open Role Permission Manager">
+    Go to **Home > Users and Permissions > Role Permissions Manager**.
+  </Step>
+  
+  <Step title="Select DocType">
+    Choose the DocType you want to configure (e.g., "Sales Order").
+  </Step>
+  
+  <Step title="Modify Permissions">
+    For each role:
+    - Check/uncheck permission boxes (Read, Write, Create, etc.)
+    - Set permission level (0-9) for field-level permissions
+    - Define conditions using "If Owner" or "User Permission" filters
+  </Step>
+  
+  <Step title="Save Changes">
+    Click **Update** to apply the new permission rules.
+  </Step>
+</Steps>
+
+## Best Practices
+
+### Security
+
+<Warning>
+  - Never share the Administrator password
+  - Use strong passwords for all user accounts
+  - Regularly review and audit user permissions
+  - Disable users who no longer need access
+  - Use Two-Factor Authentication for sensitive roles
+</Warning>
+
+### Organization
+
+<Note>
+  - Create role profiles for common job functions
+  - Use consistent naming conventions for employees and users
+  - Document custom permission rules
+  - Regularly clean up inactive user accounts
+  - Link employees to users for better reporting
+</Note>
+
+### Employee Management
+
+```python
+# Employee name is auto-generated from name fields
+# From employee.py:59-62
+def set_employee_name(self):
+    self.employee_name = " ".join(
+        filter(lambda x: x, [self.first_name, self.middle_name, self.last_name])
+    )
+```
+
+- Always fill in complete employee information
+- Keep employment status updated (Active/Inactive/Left)
+- Use the Reports To field to build organizational hierarchy
+- Enable user permissions for employees who need restricted access
+
+## API Examples
+
+### Create User with Roles
+
+```python
+import frappe
+from frappe.desk.page.setup_wizard.setup_wizard import add_all_roles_to
+
+# Create new user
+user = frappe.get_doc({
+    "doctype": "User",
+    "email": "newuser@example.com",
+    "first_name": "John",
+    "last_name": "Doe",
+    "send_welcome_email": 1
+})
+user.insert()
+
+# Add roles
+user.append("roles", {"role": "Sales User"})
+user.append("roles", {"role": "Stock User"})
+user.save()
+```
+
+### Create Employee with User Link
+
+```python
+employee = frappe.get_doc({
+    "doctype": "Employee",
+    "first_name": "John",
+    "last_name": "Doe",
+    "company": "Wind Power LLC",
+    "date_of_joining": "2024-01-01",
+    "status": "Active",
+    "user_id": "john.doe@example.com",
+    "create_user_permission": 1
+})
+employee.insert()
+```
+
+### Add User Permission Programmatically
+
+```python
+from frappe.permissions import add_user_permission
+
+# Restrict user to a specific company
+add_user_permission(
+    doctype="Company",
+    name="Wind Power LLC",
+    user="user@example.com",
+    is_default=1
+)
+```
+
+## Related Documentation
+
+- [Company Setup](/setup/company)
+- [Global Settings](/setup/settings)
+- [Role Permission Manager](https://docs.erpnext.com/docs/user/manual/en/setting-up/users-and-permissions)

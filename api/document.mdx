@@ -1,0 +1,456 @@
+---
+title: Document API
+description: Complete guide to Frappe Framework document CRUD operations for ERPNext
+---
+
+The Document API provides methods for creating, reading, updating, and deleting documents in ERPNext. All operations interact with the Frappe Framework's ORM layer.
+
+## Getting Documents
+
+### frappe.get_doc()
+
+Retrieve a single document from the database.
+
+<ParamField path="doctype" type="string" required>
+  The DocType name (e.g., "Sales Order", "Customer", "Item")
+</ParamField>
+
+<ParamField path="name" type="string" required>
+  The document name/ID
+</ParamField>
+
+<CodeGroup>
+```python Get by DocType and Name
+import frappe
+
+# Get a specific Sales Invoice
+invoice = frappe.get_doc("Sales Invoice", "SI-2024-00001")
+print(invoice.customer)
+print(invoice.grand_total)
+
+# Get a Customer
+customer = frappe.get_doc("Customer", "_Test Customer")
+print(customer.customer_name)
+```
+
+```python Get with Filters
+import frappe
+
+# Get document using filters (dict)
+contact = frappe.get_doc("Contact", {
+    "email_id": "test@example.com"
+})
+
+# Get monthly distribution
+distribution = frappe.get_doc("Monthly Distribution", {
+    "distribution_id": "_Test Distribution"
+})
+```
+
+```python Get and Modify
+import frappe
+
+# Get, modify and save
+company = frappe.get_doc("Company", "_Test Company")
+company.monthly_sales_target = 10000
+company.save()
+```
+</CodeGroup>
+
+### frappe.get_all()
+
+Get a list of documents with minimal data. Returns only specified fields.
+
+<ParamField path="doctype" type="string" required>
+  The DocType to query
+</ParamField>
+
+<ParamField path="filters" type="dict" default="{}">
+  Filter conditions as dictionary
+</ParamField>
+
+<ParamField path="fields" type="list" default="['name']">
+  List of fields to retrieve
+</ParamField>
+
+<ParamField path="order_by" type="string">
+  Sort order (e.g., "creation desc", "modified asc")
+</ParamField>
+
+<ParamField path="limit" type="int">
+  Maximum number of records to return
+</ParamField>
+
+<CodeGroup>
+```python Basic Usage
+import frappe
+
+# Get all accounts
+accounts = frappe.get_all("Account", 
+    filters={"company": "_Test Company"},
+    fields=["name", "account_name", "account_type"]
+)
+
+for account in accounts:
+    print(account.name, account.account_name)
+```
+
+```python With Complex Filters
+import frappe
+
+# Get addresses with specific filters
+addresses = frappe.get_all("Address",
+    filters={
+        "address_type": "Office",
+        "city": "_Test City"
+    },
+    fields=["name", "address_line1", "city", "country"]
+)
+```
+
+```python With Order and Limit
+import frappe
+
+# Get recent 10 sales orders
+orders = frappe.get_all("Sales Order",
+    filters={"docstatus": 1},
+    fields=["name", "customer", "grand_total"],
+    order_by="creation desc",
+    limit=10
+)
+```
+</CodeGroup>
+
+### frappe.get_list()
+
+Similar to `get_all()` but with permission checks and additional features.
+
+<CodeGroup>
+```python Get List with Permissions
+import frappe
+
+# Get list with permission filtering
+items = frappe.get_list("Item",
+    filters={"disabled": 0},
+    fields=["item_code", "item_name", "stock_uom"],
+    order_by="item_name"
+)
+```
+
+```python Paginated Results
+import frappe
+
+# Get paginated employees
+employees = frappe.get_list("Employee",
+    filters={"status": "Active"},
+    fields=["name", "first_name", "department"],
+    start=0,
+    page_length=20
+)
+```
+</CodeGroup>
+
+## Creating Documents
+
+### frappe.get_doc() with dict
+
+Create a new document by passing a dictionary.
+
+<CodeGroup>
+```python Create and Insert
+import frappe
+
+# Create a new Contact
+contact = frappe.get_doc({
+    "doctype": "Contact",
+    "first_name": "_Test Contact for _Test Customer",
+    "links": [{
+        "link_doctype": "Customer",
+        "link_name": "_Test Customer"
+    }]
+})
+contact.add_email("test_contact_customer@example.com", is_primary=True)
+contact.add_phone("+91 0000000000", is_primary_phone=True)
+contact.insert()
+```
+
+```python Create Address
+import frappe
+
+# Create a new Address
+address = frappe.get_doc({
+    "doctype": "Address",
+    "address_title": "_Test Address for Customer",
+    "address_type": "Office",
+    "address_line1": "Station Road",
+    "city": "_Test City",
+    "state": "Test State",
+    "country": "India",
+    "links": [{
+        "link_doctype": "Customer",
+        "link_name": "_Test Customer"
+    }]
+}).insert()
+```
+
+```python Create with Child Table
+import frappe
+
+# Create Lead with notes
+lead = frappe.get_doc({
+    "doctype": "Lead",
+    "email_id": "test_lead@example.com",
+    "lead_name": "_Test Lead",
+    "status": "Open",
+    "territory": "_Test Territory",
+    "naming_series": "_T-Lead-"
+}).insert()
+```
+</CodeGroup>
+
+## Updating Documents
+
+### Save Changes
+
+Modify and save existing documents.
+
+<CodeGroup>
+```python Update and Save
+import frappe
+
+# Get and update document
+company = frappe.get_doc("Company", "_Test Company")
+company.monthly_sales_target = 2000
+company.total_monthly_sales = 1500
+company.save()
+```
+
+```python Conditional Update
+import frappe
+
+# Update only if conditions met
+if not frappe.db.exists("Project", {"project_name": "_Test Project"}):
+    project = frappe.get_doc({
+        "doctype": "Project",
+        "company": "_Test Company",
+        "project_name": "_Test Project",
+        "status": "Open"
+    }).insert()
+else:
+    project = frappe.get_doc("Project", {"project_name": "_Test Project"})
+    project.status = "Completed"
+    project.save()
+```
+</CodeGroup>
+
+## Deleting Documents
+
+### frappe.delete_doc()
+
+Delete one or multiple documents.
+
+<ParamField path="doctype" type="string" required>
+  The DocType name
+</ParamField>
+
+<ParamField path="name" type="string | list" required>
+  Document name or list of names to delete
+</ParamField>
+
+<ParamField path="for_reload" type="bool" default="False">
+  Skip some validations during reload
+</ParamField>
+
+<CodeGroup>
+```python Delete Single Document
+import frappe
+
+# Delete a document
+frappe.delete_doc("Lead", "LEAD-2024-00001")
+```
+
+```python Delete Multiple Documents
+import frappe
+
+# Delete multiple events
+events = ["EVT-001", "EVT-002", "EVT-003"]
+frappe.delete_doc("Event", events, for_reload=True)
+```
+
+```python Conditional Delete
+import frappe
+
+# Delete if exists
+if frappe.db.exists("Task", "TASK-001"):
+    frappe.delete_doc("Task", "TASK-001")
+```
+</CodeGroup>
+
+## Document Methods
+
+### Common Document Operations
+
+<Tabs>
+  <Tab title="Validate">
+    ```python
+    import frappe
+    
+    # Get document and validate
+    doc = frappe.get_doc("Sales Order", "SO-2024-00001")
+    doc.validate()  # Run validation hooks
+    ```
+  </Tab>
+  
+  <Tab title="Submit">
+    ```python
+    import frappe
+    
+    # Submit a submittable document
+    invoice = frappe.get_doc("Sales Invoice", "SI-2024-00001")
+    invoice.submit()
+    ```
+  </Tab>
+  
+  <Tab title="Cancel">
+    ```python
+    import frappe
+    
+    # Cancel a submitted document
+    order = frappe.get_doc("Purchase Order", "PO-2024-00001")
+    order.cancel()
+    ```
+  </Tab>
+  
+  <Tab title="Reload">
+    ```python
+    import frappe
+    
+    # Reload document from database
+    doc = frappe.get_doc("Item", "ITEM-001")
+    doc.item_name = "Updated Name"
+    doc.reload()  # Discard changes and reload from DB
+    ```
+  </Tab>
+</Tabs>
+
+## Checking Document Existence
+
+### frappe.db.exists()
+
+Check if a document exists before operations.
+
+<CodeGroup>
+```python Simple Existence Check
+import frappe
+
+# Check if document exists
+if frappe.db.exists("Customer", "_Test Customer"):
+    print("Customer exists")
+
+# Check with filters
+if frappe.db.exists("Account", {"account_name": "Debtors", "company": "_Test Company"}):
+    print("Account found")
+```
+
+```python Conditional Creation
+import frappe
+
+# Create only if doesn't exist
+if not frappe.db.exists("Employee", {"first_name": "John Doe"}):
+    employee = frappe.get_doc({
+        "doctype": "Employee",
+        "first_name": "John Doe",
+        "company": "_Test Company",
+        "status": "Active"
+    }).insert()
+else:
+    employee = frappe.get_doc("Employee", {"first_name": "John Doe"})
+```
+</CodeGroup>
+
+## Response Structure
+
+### Document Object
+
+<ResponseField name="doctype" type="string">
+  The DocType name of the document
+</ResponseField>
+
+<ResponseField name="name" type="string">
+  Unique identifier of the document
+</ResponseField>
+
+<ResponseField name="owner" type="string">
+  User who created the document
+</ResponseField>
+
+<ResponseField name="creation" type="datetime">
+  Timestamp when document was created
+</ResponseField>
+
+<ResponseField name="modified" type="datetime">
+  Timestamp of last modification
+</ResponseField>
+
+<ResponseField name="modified_by" type="string">
+  User who last modified the document
+</ResponseField>
+
+<ResponseField name="docstatus" type="int">
+  Document status: 0 (Draft), 1 (Submitted), 2 (Cancelled)
+</ResponseField>
+
+## Best Practices
+
+<Card title="Performance" icon="gauge-high">
+  Use `get_all()` or `get_list()` when you only need specific fields. Avoid loading full documents unnecessarily.
+</Card>
+
+<Card title="Permissions" icon="shield">
+  Use `get_list()` instead of `get_all()` when permission checks are required.
+</Card>
+
+<Card title="Transactions" icon="database">
+  Wrap multiple operations in `frappe.db.commit()` for consistency.
+</Card>
+
+<Card title="Validation" icon="check">
+  Always call `.insert()` or `.save()` to trigger validation hooks and maintain data integrity.
+</Card>
+
+## Common Patterns
+
+### Get or Create Pattern
+
+```python
+import frappe
+
+def get_or_create_contact(email):
+    """Get existing contact or create new one"""
+    if frappe.db.exists("Contact", {"email_id": email}):
+        return frappe.get_doc("Contact", {"email_id": email})
+    
+    contact = frappe.get_doc({
+        "doctype": "Contact",
+        "email_id": email,
+        "first_name": email.split("@")[0]
+    })
+    contact.insert()
+    return contact
+```
+
+### Bulk Operations
+
+```python
+import frappe
+
+# Bulk create with error handling
+for record in records:
+    try:
+        doc = frappe.get_doc(record)
+        doc.insert()
+        frappe.db.commit()
+    except Exception as e:
+        frappe.db.rollback()
+        frappe.log_error(f"Failed to create {record.get('doctype')}: {str(e)}")
+```

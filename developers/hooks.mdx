@@ -1,0 +1,567 @@
+---
+title: Hooks System
+description: Extending ERPNext functionality using the hooks mechanism
+---
+
+Hooks are ERPNext's powerful extension system that allows you to customize behavior without modifying core code. They enable you to inject custom logic at various points in the application lifecycle.
+
+## Understanding Hooks
+
+Hooks are defined in `hooks.py` in your app directory. ERPNext reads these configurations and executes your custom code at the appropriate times.
+
+<Note>
+  Hooks make your customizations upgrade-safe. When ERPNext is updated, your custom code in `hooks.py` remains intact.
+</Note>
+
+## Hook Types
+
+ERPNext provides several categories of hooks:
+
+### 1. Document Event Hooks
+
+Execute custom code when document events occur:
+
+```python
+# hooks.py
+doc_events = {
+    # Global hook - applies to ALL doctypes
+    "*": {
+        "validate": "myapp.utils.global_validate",
+        "before_save": "myapp.utils.log_changes"
+    },
+    
+    # Specific doctype hooks
+    "Sales Order": {
+        "on_submit": [
+            "myapp.sales.notify_warehouse",
+            "myapp.sales.update_forecast"
+        ],
+        "on_cancel": "myapp.sales.reverse_forecast",
+        "before_insert": "myapp.sales.set_defaults"
+    },
+    
+    # Multiple doctypes with same hook
+    tuple(["Sales Invoice", "Purchase Invoice"]): {
+        "on_submit": "myapp.accounting.sync_to_external_system"
+    },
+    
+    # Wildcard doctype hooks
+    "User": {
+        "after_insert": "myapp.users.send_welcome_email",
+        "validate": "myapp.users.validate_company_email",
+        "on_update": "myapp.users.sync_to_ldap"
+    }
+}
+```
+
+<Accordion title="Available Document Events">
+  | Event | When It Fires | Use Case |
+  |-------|---------------|----------|
+  | `before_insert` | Before creating new document | Set defaults, generate codes |
+  | `after_insert` | After document created | Send notifications, create linked docs |
+  | `validate` | Before saving (draft/submit) | Validate business rules |
+  | `before_save` | Just before database write | Compute derived values |
+  | `on_update` | After save to database | Update related records |
+  | `before_submit` | Before submission | Final validations |
+  | `on_submit` | After submission | Create ledger entries, update stock |
+  | `before_cancel` | Before cancellation | Check if cancellation allowed |
+  | `on_cancel` | After cancellation | Reverse ledger entries |
+  | `on_trash` | Before deletion | Check dependencies |
+  | `after_delete` | After deletion | Clean up related data |
+  | `on_update_after_submit` | When submitted doc is modified | Track amendments |
+</Accordion>
+
+### Example Implementation
+
+<CodeGroup>
+```python Validation Hook
+# myapp/sales.py
+import frappe
+from frappe import _
+
+def validate_sales_order(doc, method):
+    """Custom validation for Sales Order"""
+    # Check minimum order value
+    min_order_value = frappe.db.get_single_value("Selling Settings", "minimum_order_value")
+    
+    if doc.grand_total < min_order_value:
+        frappe.throw(
+            _("Order value {0} is below minimum {1}").format(
+                doc.grand_total, min_order_value
+            )
+        )
+    
+    # Check customer credit limit
+    if doc.customer:
+        check_customer_credit_status(doc.customer, doc.grand_total)
+```
+
+```python Submission Hook
+# myapp/inventory.py
+import frappe
+
+def update_inventory_on_submit(doc, method):
+    """Update inventory forecast when Sales Order is submitted"""
+    for item in doc.items:
+        forecast = frappe.get_doc({
+            "doctype": "Inventory Forecast",
+            "item_code": item.item_code,
+            "warehouse": item.warehouse,
+            "forecast_qty": -item.qty,
+            "reference_type": doc.doctype,
+            "reference_name": doc.name,
+            "date": doc.delivery_date
+        })
+        forecast.insert()
+```
+
+```python Global Hook
+# myapp/utils.py
+import frappe
+from frappe.utils import now
+
+def log_all_changes(doc, method):
+    """Log all document changes to custom audit table"""
+    if doc.doctype not in ["Activity Log", "Change Log"]:
+        frappe.get_doc({
+            "doctype": "Custom Audit Log",
+            "document_type": doc.doctype,
+            "document_name": doc.name,
+            "action": method,
+            "user": frappe.session.user,
+            "timestamp": now(),
+            "data": doc.as_json()
+        }).insert(ignore_permissions=True)
+```
+</CodeGroup>
+
+### 2. Override Hooks
+
+Replace standard ERPNext functionality:
+
+```python
+# hooks.py
+
+# Override specific DocType class
+extend_doctype_class = {
+    "Address": "myapp.overrides.address.CustomAddress"
+}
+
+# Override whitelisted methods
+override_whitelisted_methods = {
+    "erpnext.stock.get_item_details.get_item_details": "myapp.stock.custom_get_item_details"
+}
+
+# Override doctype methods
+override_doctype_methods = {
+    "Sales Order": {
+        "make_sales_invoice": "myapp.sales.custom_make_sales_invoice"
+    }
+}
+```
+
+#### Example: Extending DocType Class
+
+```python
+# myapp/overrides/address.py
+from erpnext.accounts.custom.address import ERPNextAddress
+import frappe
+
+class CustomAddress(ERPNextAddress):
+    """Extended Address with custom validation"""
+    
+    def validate(self):
+        super().validate()
+        self.validate_postal_code()
+        self.geocode_address()
+    
+    def validate_postal_code(self):
+        """Validate postal code format"""
+        if self.country == "United States":
+            import re
+            if not re.match(r'^\d{5}(-\d{4})?$', self.pincode or ''):
+                frappe.throw("Invalid US ZIP code format")
+    
+    def geocode_address(self):
+        """Add geocoding to addresses"""
+        if not self.latitude and not self.longitude:
+            # Call geocoding API
+            coords = get_coordinates(self.address_line1, self.city, self.country)
+            if coords:
+                self.latitude = coords['lat']
+                self.longitude = coords['lng']
+```
+
+### 3. Scheduler Hooks
+
+Run background tasks on a schedule:
+
+```python
+# hooks.py
+scheduler_events = {
+    # Cron format
+    "cron": {
+        "0 2 * * *": [  # Every day at 2 AM
+            "myapp.tasks.daily_backup",
+            "myapp.tasks.cleanup_old_logs"
+        ],
+        "*/15 * * * *": [  # Every 15 minutes
+            "myapp.tasks.sync_inventory"
+        ]
+    },
+    
+    # Named intervals
+    "hourly": [
+        "myapp.tasks.check_stock_levels",
+        "myapp.tasks.process_pending_orders"
+    ],
+    
+    "daily": [
+        "myapp.tasks.send_daily_report",
+        "myapp.tasks.archive_old_records"
+    ],
+    
+    "weekly": [
+        "myapp.tasks.generate_weekly_analytics"
+    ],
+    
+    "monthly": [
+        "myapp.tasks.close_accounting_period"
+    ],
+    
+    # Long-running tasks (separate queue)
+    "daily_long": [
+        "myapp.tasks.generate_annual_report"
+    ]
+}
+```
+
+#### Scheduler Task Example
+
+```python
+# myapp/tasks.py
+import frappe
+from frappe.utils import today, add_days, get_datetime
+
+def check_stock_levels():
+    """Check stock levels and create reorder notifications"""
+    items = frappe.get_all(
+        "Item",
+        filters={"is_stock_item": 1},
+        fields=["name", "item_code", "item_name"]
+    )
+    
+    for item in items:
+        reorder_levels = frappe.get_all(
+            "Item Reorder",
+            filters={"parent": item.name},
+            fields=["warehouse", "warehouse_reorder_level", "warehouse_reorder_qty"]
+        )
+        
+        for reorder in reorder_levels:
+            current_stock = frappe.db.get_value(
+                "Bin",
+                {"item_code": item.item_code, "warehouse": reorder.warehouse},
+                "actual_qty"
+            ) or 0
+            
+            if current_stock < reorder.warehouse_reorder_level:
+                create_reorder_notification(item, reorder, current_stock)
+
+def send_daily_report():
+    """Send daily sales report to management"""
+    from frappe.utils import get_datetime_str
+    
+    # Get yesterday's sales
+    sales_data = frappe.db.sql("""
+        SELECT 
+            customer,
+            SUM(grand_total) as total_sales,
+            COUNT(*) as order_count
+        FROM `tabSales Order`
+        WHERE docstatus = 1
+        AND DATE(transaction_date) = CURDATE() - INTERVAL 1 DAY
+        GROUP BY customer
+        ORDER BY total_sales DESC
+    """, as_dict=True)
+    
+    # Send email
+    frappe.sendmail(
+        recipients=["management@company.com"],
+        subject="Daily Sales Report - {0}".format(today()),
+        message=frappe.render_template(
+            "templates/emails/daily_sales_report.html",
+            {"sales_data": sales_data}
+        )
+    )
+```
+
+### 4. Permission Hooks
+
+Customize permission logic:
+
+```python
+# hooks.py
+has_permission = {
+    "Sales Order": "myapp.permissions.sales_order_permission"
+}
+
+has_website_permission = {
+    "Item": "myapp.permissions.item_website_permission"
+}
+```
+
+```python
+# myapp/permissions.py
+import frappe
+
+def sales_order_permission(doc, user=None, permission_type=None):
+    """Custom permission logic for Sales Order"""
+    if not user:
+        user = frappe.session.user
+    
+    # Admins have full access
+    if "System Manager" in frappe.get_roles(user):
+        return True
+    
+    # Sales users can only see orders from their territory
+    if "Sales User" in frappe.get_roles(user):
+        user_territory = frappe.db.get_value("Sales Person", 
+            {"user": user}, "territory")
+        return doc.territory == user_territory
+    
+    return False
+```
+
+### 5. Fixture Hooks
+
+Load default data during installation:
+
+```python
+# hooks.py
+fixtures = [
+    {"dt": "Custom Field", "filters": [["module", "in", ["My App"]]]},
+    {"dt": "Property Setter", "filters": [["module", "in", ["My App"]]]},
+    "Workflow",
+    "Workflow State",
+    "Print Format"
+]
+```
+
+### 6. Page and Form Hooks
+
+Customize forms and add JavaScript:
+
+```python
+# hooks.py
+
+# Add JS to specific doctypes
+doctype_js = {
+    "Sales Order": "public/js/sales_order_custom.js",
+    "Item": "public/js/item_custom.js"
+}
+
+# Add JS to doctype list views
+doctype_list_js = {
+    "Sales Order": "public/js/sales_order_list.js"
+}
+
+# Add JS to specific pages
+page_js = {
+    "dashboard": "public/js/dashboard_custom.js"
+}
+
+# Add global JS/CSS
+app_include_js = [
+    "assets/myapp/js/custom_global.js"
+]
+
+app_include_css = [
+    "assets/myapp/css/custom_styles.css"
+]
+```
+
+### 7. Boot Session Hooks
+
+Add data available on page load:
+
+```python
+# hooks.py
+boot_session = "myapp.boot.get_boot_data"
+
+# myapp/boot.py
+import frappe
+
+def get_boot_data(bootinfo):
+    """Add custom data to boot info"""
+    bootinfo.custom_settings = frappe.get_single("My App Settings").as_dict()
+    bootinfo.user_permissions = get_user_specific_permissions()
+    bootinfo.feature_flags = {
+        "new_ui_enabled": True,
+        "beta_features": False
+    }
+```
+
+### 8. Jinja Hooks
+
+Add custom Jinja methods for print formats:
+
+```python
+# hooks.py
+jinja = {
+    "methods": [
+        "myapp.utils.format_currency",
+        "myapp.utils.get_company_logo"
+    ]
+}
+
+# Usage in print format
+# {{ format_currency(doc.grand_total) }}
+```
+
+### 9. Regional Hooks
+
+Country-specific customizations:
+
+```python
+# hooks.py
+regional_overrides = {
+    "India": {
+        "erpnext.controllers.taxes_and_totals.calculate_taxes": 
+            "myapp.regional.india.calculate_gst"
+    },
+    "United States": {
+        "erpnext.hr.utils.calculate_tax": 
+            "myapp.regional.us.calculate_federal_tax"
+    }
+}
+```
+
+## Real-World Example from ERPNext
+
+Here's an actual example from ERPNext's `hooks.py`:
+
+```python
+# From erpnext/hooks.py
+
+# Application metadata
+app_name = "erpnext"
+app_title = "ERPNext"
+app_publisher = "Frappe Technologies Pvt. Ltd."
+
+# Document events
+period_closing_doctypes = [
+    "Sales Invoice",
+    "Purchase Invoice",
+    "Journal Entry",
+    "Stock Entry"
+]
+
+doc_events = {
+    # Validate accounting period for all closing doctypes
+    tuple(period_closing_doctypes): {
+        "validate": "erpnext.accounts.doctype.accounting_period.accounting_period.validate_accounting_period_on_doc_save"
+    },
+    
+    # Stock Entry events
+    "Stock Entry": {
+        "on_submit": "erpnext.stock.doctype.material_request.material_request.update_completed_and_requested_qty",
+        "on_cancel": "erpnext.stock.doctype.material_request.material_request.update_completed_and_requested_qty"
+    },
+    
+    # User events
+    "User": {
+        "after_insert": "frappe.contacts.doctype.contact.contact.update_contact",
+        "validate": "erpnext.setup.doctype.employee.employee.validate_employee_role",
+        "on_update": "erpnext.portal.utils.set_default_role"
+    },
+    
+    # Communication events
+    "Communication": {
+        "on_update": [
+            "erpnext.support.doctype.service_level_agreement.service_level_agreement.on_communication_update",
+            "erpnext.support.doctype.issue.issue.set_first_response_time"
+        ]
+    }
+}
+
+# Scheduler events
+scheduler_events = {
+    "cron": {
+        "0/15 * * * *": [  # Every 15 minutes
+            "erpnext.manufacturing.doctype.bom_update_log.bom_update_log.resume_bom_cost_update_jobs"
+        ],
+        "30 * * * *": [  # Hourly at 30 minutes past
+            "erpnext.accounts.doctype.gl_entry.gl_entry.rename_gle_sle_docs"
+        ]
+    },
+    "daily_maintenance": [
+        "erpnext.support.doctype.issue.issue.auto_close_tickets",
+        "erpnext.accounts.doctype.fiscal_year.fiscal_year.auto_create_fiscal_year",
+        "erpnext.stock.doctype.serial_no.serial_no.update_maintenance_status"
+    ]
+}
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Keep Hooks Focused" icon="bullseye">
+    Each hook function should do one thing well. Split complex logic into multiple functions.
+  </Card>
+  
+  <Card title="Handle Errors Gracefully" icon="shield-check">
+    Wrap hook code in try-except blocks to prevent breaking the application.
+  </Card>
+  
+  <Card title="Use Appropriate Events" icon="calendar">
+    Use `validate` for validations, `on_submit` for side effects, `before_save` for computations.
+  </Card>
+  
+  <Card title="Test Thoroughly" icon="vial">
+    Write unit tests for all hook functions to ensure they work as expected.
+  </Card>
+</CardGroup>
+
+<Note>
+  After modifying `hooks.py`, restart your Frappe bench for changes to take effect:
+  ```bash
+  bench restart
+  ```
+</Note>
+
+## Debugging Hooks
+
+```python
+import frappe
+
+def my_hook_function(doc, method):
+    """Debug hook execution"""
+    # Log to console
+    frappe.logger().info(f"Hook fired: {method} on {doc.doctype} {doc.name}")
+    
+    # Print to bench logs
+    print(f"Processing {doc.name}")
+    
+    # Use debugger
+    import pdb; pdb.set_trace()
+    
+    # Log to Error Log
+    frappe.log_error(f"Hook data: {doc.as_dict()}", "Hook Debug")
+```
+
+## Next Steps
+
+<CardGroup cols={3}>
+  <Card title="Architecture" icon="diagram-project" href="/developers/architecture">
+    Understand ERPNext architecture
+  </Card>
+  
+  <Card title="DocTypes" icon="database" href="/developers/doctype">
+    Learn about DocType development
+  </Card>
+  
+  <Card title="Testing" icon="vial" href="/developers/testing">
+    Write tests for hooks
+  </Card>
+</CardGroup>

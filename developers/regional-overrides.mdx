@@ -1,0 +1,548 @@
+---
+title: Regional Overrides
+description: Implement country-specific business logic and compliance features in ERPNext using the regional overrides system
+---
+
+Regional overrides allow you to customize ERPNext behavior based on country or region without modifying core code. This is essential for implementing country-specific compliance, tax rules, and business practices.
+
+## Understanding Regional Overrides
+
+ERPNext's regional override system enables:
+- Country-specific tax calculations
+- Localized invoice formats and validations
+- Compliance with local regulations
+- Regional accounting practices
+- Custom GL entry handling
+
+## How Regional Overrides Work
+
+ERPNext determines the active region from:
+1. Company's country setting
+2. Global system settings
+3. Frappe flags
+
+When a function decorated with `@erpnext.allow_regional` is called, ERPNext checks for country-specific overrides in `hooks.py` and calls the regional version if found.
+
+## The @allow_regional Decorator
+
+The decorator makes functions regionally overridable:
+
+```python
+# erpnext/__init__.py
+
+import functools
+import inspect
+import frappe
+
+def allow_regional(fn):
+    """Decorator to make a function regionally overridable
+    
+    Example:
+    @erpnext.allow_regional
+    def myfunction():
+        pass
+    """
+    @functools.wraps(fn)
+    def caller(*args, **kwargs):
+        overrides = frappe.get_hooks("regional_overrides", {}).get(get_region())
+        function_path = f"{inspect.getmodule(fn).__name__}.{fn.__name__}"
+        
+        if not overrides or function_path not in overrides:
+            return fn(*args, **kwargs)
+        
+        # Priority given to last installed app
+        return frappe.get_attr(overrides[function_path][-1])(*args, **kwargs)
+    
+    return caller
+```
+
+## Configuring Regional Overrides
+
+### In hooks.py
+
+Define regional overrides in your app's `hooks.py`:
+
+```python
+# erpnext/hooks.py
+
+regional_overrides = {
+    "United Arab Emirates": {
+        "erpnext.controllers.taxes_and_totals.update_itemised_tax_data": 
+            "erpnext.regional.united_arab_emirates.utils.update_itemised_tax_data",
+        "erpnext.accounts.doctype.purchase_invoice.purchase_invoice.make_regional_gl_entries": 
+            "erpnext.regional.united_arab_emirates.utils.make_regional_gl_entries",
+    },
+    "Italy": {
+        "erpnext.controllers.taxes_and_totals.update_itemised_tax_data": 
+            "erpnext.regional.italy.utils.update_itemised_tax_data",
+        "erpnext.controllers.accounts_controller.validate_regional": 
+            "erpnext.regional.italy.utils.sales_invoice_validate",
+    },
+    "Saudi Arabia": {
+        "erpnext.controllers.taxes_and_totals.update_itemised_tax_data": 
+            "erpnext.regional.united_arab_emirates.utils.update_itemised_tax_data"
+    }
+}
+```
+
+## Real-World Examples
+
+### Example 1: UAE VAT Implementation
+
+UAE requires reverse charge mechanism for certain transactions:
+
+```python
+# erpnext/regional/united_arab_emirates/utils.py
+
+import frappe
+import erpnext
+from erpnext.controllers.taxes_and_totals import get_itemised_tax_breakup_data
+
+def update_itemised_tax_data(doc):
+    """Update tax breakup for UAE VAT requirements"""
+    if not doc.taxes:
+        return
+    
+    # Get standard tax breakup
+    itemised_tax = get_itemised_tax_breakup_data(doc)
+    
+    # Add UAE-specific zero-rated and exempt flags
+    for row in doc.items:
+        if row.is_zero_rated:
+            itemised_tax[row.item_code]["zero_rated"] = True
+        if row.is_exempt:
+            itemised_tax[row.item_code]["exempt"] = True
+    
+    doc._itemised_tax_data = itemised_tax
+
+def make_regional_gl_entries(gl_entries, doc):
+    """Add GL entries for reverse charge mechanism"""
+    country = frappe.get_cached_value("Company", doc.company, "country")
+    
+    if country != "United Arab Emirates":
+        return gl_entries
+    
+    if doc.reverse_charge == "Y":
+        tax_accounts = get_tax_accounts(doc.company)
+        for tax in doc.get("taxes"):
+            if tax.category not in ("Total", "Valuation and Total"):
+                continue
+            gl_entries = make_gl_entry(tax, gl_entries, doc, tax_accounts)
+    
+    return gl_entries
+
+def make_gl_entry(tax, gl_entries, doc, tax_accounts):
+    """Create GL entry for reverse charge tax"""
+    from erpnext.accounts.general_ledger import get_account_currency
+    from frappe.utils import flt
+    
+    dr_or_cr = "credit" if tax.add_deduct_tax == "Add" else "debit"
+    
+    if flt(tax.base_tax_amount_after_discount_amount) and tax.account_head in tax_accounts:
+        account_currency = get_account_currency(tax.account_head)
+        
+        gl_entries.append(
+            doc.get_gl_dict(
+                {
+                    "account": tax.account_head,
+                    "against": doc.supplier,
+                    dr_or_cr: flt(tax.base_tax_amount_after_discount_amount),
+                    "cost_center": tax.cost_center,
+                    "remarks": "Reverse charge VAT"
+                },
+                account_currency,
+                item=tax
+            )
+        )
+    
+    return gl_entries
+```
+
+### Example 2: Italy E-Invoicing
+
+Italy requires specific validations and electronic invoice generation:
+
+```python
+# erpnext/regional/italy/utils.py
+
+import frappe
+from frappe import _
+
+def sales_invoice_validate(doc):
+    """Validate Italian e-invoice requirements"""
+    if not doc.company or frappe.get_cached_value("Company", doc.company, "country") != "Italy":
+        return
+    
+    # Validate fiscal code or VAT number
+    if doc.customer:
+        customer = frappe.get_cached_doc("Customer", doc.customer)
+        if not customer.tax_id and not customer.fiscal_code:
+            frappe.throw(_("Customer must have either Tax ID or Fiscal Code for Italian invoicing"))
+    
+    # Validate electronic invoice code
+    if not doc.customer_address:
+        frappe.throw(_("Customer Address is mandatory for Italian invoicing"))
+    
+    address = frappe.get_cached_doc("Address", doc.customer_address)
+    if address.country == "Italy" and not address.electronic_invoice_code:
+        frappe.throw(_("Electronic Invoice Code is required for Italian addresses"))
+
+def update_itemised_tax_data(doc):
+    """Add Italian tax nature codes to itemised tax data"""
+    itemised_tax = get_itemised_tax_breakup_data(doc)
+    
+    for row in doc.items:
+        if row.item_code in itemised_tax:
+            # Add Italian specific tax exemption reason
+            if hasattr(row, 'tax_exemption_reason'):
+                itemised_tax[row.item_code]["tax_exemption_reason"] = row.tax_exemption_reason
+    
+    doc._itemised_tax_data = itemised_tax
+```
+
+### Example 3: Custom Regional Setup
+
+Implement regional setup during company creation:
+
+```python
+# custom_app/regional/australia/setup.py
+
+import frappe
+from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
+
+def setup(company=None, patch=True):
+    """Setup Australian localization"""
+    make_custom_fields()
+    setup_tax_accounts(company)
+    configure_gst_settings()
+
+def make_custom_fields():
+    """Add Australian-specific custom fields"""
+    custom_fields = {
+        "Customer": [
+            dict(
+                fieldname="abn",
+                label="Australian Business Number (ABN)",
+                fieldtype="Data",
+                insert_after="tax_id"
+            ),
+            dict(
+                fieldname="acn",
+                label="Australian Company Number (ACN)",
+                fieldtype="Data",
+                insert_after="abn"
+            )
+        ],
+        "Sales Invoice": [
+            dict(
+                fieldname="gst_treatment",
+                label="GST Treatment",
+                fieldtype="Select",
+                options="GST\nGST Free\nInput Taxed\nExport",
+                insert_after="taxes_and_charges"
+            )
+        ],
+        "Address": [
+            dict(
+                fieldname="state_code",
+                label="State Code",
+                fieldtype="Select",
+                options="\nNSW\nVIC\nQLD\nWA\nSA\nTAS\nACT\nNT",
+                insert_after="state"
+            )
+        ]
+    }
+    
+    create_custom_fields(custom_fields, update=True)
+
+def update_regional_tax_settings(country=None, company=None):
+    """Configure GST accounts and tax templates"""
+    if not company:
+        return
+    
+    # Create GST accounts
+    from erpnext.accounts.doctype.account.chart_of_accounts.chart_of_accounts import create_charts
+    
+    accounts = [
+        {
+            "account_name": "GST Collected",
+            "parent_account": "Current Liabilities - " + company.abbr,
+            "account_type": "Tax",
+            "tax_rate": 10.0
+        },
+        {
+            "account_name": "GST Paid",
+            "parent_account": "Current Assets - " + company.abbr,
+            "account_type": "Tax",
+            "tax_rate": 10.0
+        }
+    ]
+    
+    for account in accounts:
+        if not frappe.db.exists("Account", account["account_name"] + " - " + company.abbr):
+            doc = frappe.get_doc({
+                "doctype": "Account",
+                "company": company.name,
+                **account
+            })
+            doc.insert()
+```
+
+## Common Override Patterns
+
+### 1. Tax Calculation Overrides
+
+```python
+@erpnext.allow_regional
+def calculate_taxes_and_totals(doc):
+    """Base implementation"""
+    # Standard tax calculation
+    pass
+
+# Regional override
+def calculate_taxes_and_totals_india(doc):
+    """India-specific tax calculation with GST"""
+    # Calculate CGST, SGST, IGST
+    pass
+```
+
+### 2. GL Entry Modifications
+
+```python
+@erpnext.allow_regional
+def make_regional_gl_entries(gl_entries, doc):
+    """Hook for regional GL entry modifications"""
+    return gl_entries
+
+# Regional implementation
+def make_regional_gl_entries_uae(gl_entries, doc):
+    """Add UAE reverse charge GL entries"""
+    # Add additional GL entries for VAT
+    return gl_entries
+```
+
+### 3. Validation Overrides
+
+```python
+@erpnext.allow_regional
+def validate_regional(doc):
+    """Regional validation hook"""
+    pass
+
+# Country-specific validation
+def validate_regional_italy(doc):
+    """Italian e-invoice validation"""
+    if doc.doctype == "Sales Invoice":
+        validate_fiscal_code(doc)
+        validate_electronic_invoice_code(doc)
+```
+
+## Document Event Hooks for Regional Logic
+
+Combine regional overrides with document events:
+
+```python
+# hooks.py
+
+doc_events = {
+    "Sales Invoice": {
+        "on_submit": [
+            "erpnext.regional.italy.utils.sales_invoice_on_submit",
+        ],
+        "on_cancel": [
+            "erpnext.regional.italy.utils.sales_invoice_on_cancel",
+        ],
+        "on_trash": "erpnext.regional.check_deletion_permission",
+    },
+    "Purchase Invoice": {
+        "validate": [
+            "erpnext.regional.united_arab_emirates.utils.update_grand_total_for_rcm",
+            "erpnext.regional.united_arab_emirates.utils.validate_returns",
+        ]
+    },
+    "Address": {
+        "validate": [
+            "erpnext.regional.italy.utils.set_state_code",
+        ],
+    },
+}
+```
+
+## Testing Regional Overrides
+
+<Steps>
+
+### Step 1: Write Tests
+
+Create region-specific test cases:
+
+```python
+# tests/test_regional.py
+
+import frappe
+from frappe.tests import IntegrationTestCase
+import erpnext
+
+@erpnext.allow_regional
+def test_method():
+    return "original"
+
+class TestRegionalOverrides(IntegrationTestCase):
+    def test_default_behavior(self):
+        """Test without regional override"""
+        frappe.flags.country = "Maldives"
+        self.assertEqual(test_method(), "original")
+    
+    def test_uae_override(self):
+        """Test UAE-specific behavior"""
+        frappe.flags.country = "United Arab Emirates"
+        # Test UAE-specific functionality
+        
+    def test_italy_override(self):
+        """Test Italy-specific behavior"""
+        frappe.flags.country = "Italy"
+        # Test Italy-specific functionality
+```
+
+### Step 2: Test in Different Regions
+
+Set up test companies for different countries:
+
+```python
+def setUp(self):
+    self.uae_company = frappe.get_doc({
+        "doctype": "Company",
+        "company_name": "UAE Test Company",
+        "country": "United Arab Emirates",
+        "default_currency": "AED"
+    }).insert()
+    
+    self.italy_company = frappe.get_doc({
+        "doctype": "Company",
+        "company_name": "Italy Test Company",
+        "country": "Italy",
+        "default_currency": "EUR"
+    }).insert()
+```
+
+</Steps>
+
+## Best Practices
+
+### 1. Keep Regional Logic Isolated
+
+<CodeGroup>
+
+```python title="Good - Isolated Regional Module"
+# erpnext/regional/australia/
+├── __init__.py
+├── setup.py
+├── utils.py
+└── report/
+    └── bas_report/
+```
+
+```python title="Bad - Mixed with Core"
+# Modifying core controllers directly
+if country == "Australia":
+    # regional logic in core file
+```
+
+</CodeGroup>
+
+### 2. Use the @allow_regional Decorator
+
+Always use the decorator for functions that might need regional overrides:
+
+```python
+@erpnext.allow_regional
+def update_itemised_tax_data(doc):
+    """Calculate itemised tax breakup"""
+    # Base implementation
+    pass
+```
+
+### 3. Handle Missing Overrides Gracefully
+
+```python
+def regional_function(doc):
+    country = erpnext.get_region(doc.company)
+    
+    # Provide sensible defaults
+    if country not in SUPPORTED_COUNTRIES:
+        frappe.log_error(f"Regional logic not implemented for {country}")
+        return default_behavior(doc)
+```
+
+### 4. Document Regional Requirements
+
+```python
+"""
+UAE VAT Implementation
+
+Requirements:
+- Reverse charge mechanism for B2B transactions
+- Zero-rated and exempt item tracking
+- VAT Return reports (Form 201)
+
+References:
+- UAE VAT Law: https://tax.gov.ae/
+- Implementation Guide: [link]
+"""
+```
+
+### 5. Version Control Regional Configurations
+
+Use fixtures for regional custom fields:
+
+```python
+fixtures = [
+    {
+        "dt": "Custom Field",
+        "filters": [
+            ["name", "in", [
+                "Sales Invoice-uae_reverse_charge",
+                "Item-is_zero_rated",
+                "Item-is_exempt"
+            ]]
+        ]
+    }
+]
+```
+
+## Deployment and Maintenance
+
+<Warning>
+When deploying regional customizations:
+
+1. **Test thoroughly** in staging with company data from that region
+2. **Check compliance** with local laws and regulations
+3. **Document changes** for audit purposes
+4. **Monitor updates** to local tax laws and regulations
+5. **Version control** all regional code and configurations
+</Warning>
+
+### Handling Multiple Regions
+
+Structure your app to support multiple regions:
+
+```
+custom_app/
+└── regional/
+    ├── __init__.py
+    ├── australia/
+    │   ├── setup.py
+    │   └── utils.py
+    ├── canada/
+    │   ├── setup.py
+    │   └── utils.py
+    └── united_kingdom/
+        ├── setup.py
+        └── utils.py
+```
+
+## Related Resources
+
+- [Creating Custom Apps](custom-app) - Build ERPNext apps
+- [Fixtures Documentation](fixtures) - Version control regional configurations
+- [ERPNext Regional Modules](https://github.com/frappe/erpnext/tree/develop/erpnext/regional) - Reference implementations

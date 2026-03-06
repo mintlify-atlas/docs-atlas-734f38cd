@@ -1,0 +1,245 @@
+---
+title: Company Setup
+description: Configure your company settings, accounting defaults, and organizational structure in ERPNext
+---
+
+The Company doctype is the foundation of your ERPNext instance. It stores essential information about your organization including accounting defaults, warehouses, and system preferences.
+
+## Creating a New Company
+
+<Steps>
+  <Step title="Navigate to Company List">
+    Go to **Home > Setup > Company** or search for "Company" in the search bar.
+  </Step>
+  
+  <Step title="Create New Company">
+    Click **New** to create a new company record.
+  </Step>
+  
+  <Step title="Enter Basic Information">
+    Fill in the required fields:
+    - **Company Name**: Full legal name of your company
+    - **Abbreviation (abbr)**: Short code appended to account names (auto-generated from company name)
+    - **Country**: Select your country for regional fixtures
+    - **Default Currency**: Base currency for all transactions
+  </Step>
+  
+  <Step title="Configure Chart of Accounts">
+    Choose how to create your chart of accounts:
+    - **Standard Template**: Use ERPNext's built-in chart of accounts
+    - **Existing Company**: Copy structure from another company in the system
+  </Step>
+  
+  <Step title="Save and Let ERPNext Initialize">
+    When you save, ERPNext automatically creates:
+    - Default accounts (Cash, Bank, Receivable, Payable, etc.)
+    - Default warehouses (Stores, Work In Progress, Finished Goods, Goods In Transit)
+    - Default cost centers (Main cost center)
+    - Default departments (Accounts, Sales, Purchase, etc.)
+  </Step>
+</Steps>
+
+<Note>
+  The company abbreviation is mandatory and must be unique. It's automatically appended to account names like "Cash - WP" where "WP" is the abbreviation.
+</Note>
+
+## Key Company Fields
+
+### Basic Information
+
+| Field | Description | Example |
+|-------|-------------|----------|
+| **Company Name** | Legal name of the company | "Wind Power LLC" |
+| **Abbreviation** | Short code for accounts | "WP" |
+| **Country** | Company's country of operation | "United States" |
+| **Default Currency** | Base currency for accounting | "USD" |
+| **Tax ID** | Government tax identification number | "12-3456789" |
+
+### Accounting Defaults
+
+ERPNext auto-creates and assigns default accounts during company setup:
+
+```python
+# From company.py:617-641
+default_accounts = {
+    "default_cash_account": "Cash",
+    "default_bank_account": "Bank",
+    "round_off_account": "Round Off",
+    "accumulated_depreciation_account": "Accumulated Depreciation",
+    "depreciation_expense_account": "Depreciation",
+    "capital_work_in_progress_account": "Capital Work in Progress",
+    "asset_received_but_not_billed": "Asset Received But Not Billed",
+    "default_expense_account": "Cost of Goods Sold",
+    "stock_received_but_not_billed": "Stock Received But Not Billed",
+    "default_inventory_account": "Stock",
+    "stock_adjustment_account": "Stock Adjustment",
+}
+```
+
+### Inventory Settings
+
+<Accordion title="Enable Perpetual Inventory">
+  When enabled, stock movements automatically create accounting entries:
+  
+  - Purchase Receipt creates entries in Stock and Payable accounts
+  - Delivery Note creates entries in Stock and Receivable accounts
+  - Stock Entry affects inventory accounts in real-time
+  
+  **Requirements:**
+  - Must set a Default Inventory Account
+  - Cannot be disabled once transactions exist
+</Accordion>
+
+<Accordion title="Enable Item-wise Inventory Account">
+  Track inventory for each item separately instead of warehouse-level tracking.
+  
+  <Warning>
+    Cannot be changed after Stock Ledger Entries exist. This is a one-way switch validated in `company.py:210-226`.
+  </Warning>
+</Accordion>
+
+<Accordion title="Valuation Method">
+  Choose how inventory is valued:
+  
+  - **FIFO**: First In, First Out
+  - **Moving Average**: Weighted average cost
+  - **LIFO**: Last In, First Out
+  
+  <Warning>
+    Cannot change valuation method once stock transactions exist for items without their own valuation method (`company.py:185-208`).
+  </Warning>
+</Accordion>
+
+## Parent Company and Group Companies
+
+ERPNext supports multi-company hierarchies using a nested set structure:
+
+```python
+# From company.py:591-610
+def set_chart_of_accounts(self):
+    """If parent company is set, chart of accounts will be based on that company"""
+    if self.parent_company:
+        self.create_chart_of_accounts_based_on = "Existing Company"
+        self.existing_company = self.parent_company
+
+def validate_parent_company(self):
+    if self.parent_company:
+        is_group = frappe.get_value("Company", self.parent_company, "is_group")
+        if not is_group:
+            frappe.throw(_("Parent Company must be a group company"))
+```
+
+<Steps>
+  <Step title="Create Parent Company">
+    Create a company and check **Is Group** to make it a parent company.
+  </Step>
+  
+  <Step title="Create Child Companies">
+    When creating new companies, set the **Parent Company** field. The chart of accounts will automatically copy from the parent.
+  </Step>
+  
+  <Step title="View Hierarchy">
+    Use the tree view to see your company structure and navigate between related companies.
+  </Step>
+</Steps>
+
+## Default Warehouses
+
+When a company is created, these warehouses are automatically set up:
+
+```python
+# From company.py:378-411
+default_warehouses = [
+    {"warehouse_name": "All Warehouses", "is_group": 1},
+    {"warehouse_name": "Stores", "is_group": 0},
+    {"warehouse_name": "Work In Progress", "is_group": 0},
+    {"warehouse_name": "Finished Goods", "is_group": 0},
+    {"warehouse_name": "Goods In Transit", "is_group": 0, "warehouse_type": "Transit"},
+]
+```
+
+## Default Departments
+
+ERPNext creates a comprehensive department structure automatically:
+
+- All Departments (parent group)
+  - Accounts
+  - Marketing
+  - Sales
+  - Purchase
+  - Operations
+  - Production
+  - Dispatch
+  - Customer Service
+  - Human Resources
+  - Management
+  - Quality Management
+  - Research & Development
+  - Legal
+
+## Important Validations
+
+<Warning>
+  **Cannot change default currency** once transactions exist. The system validates this in `company.py:318-332`.
+</Warning>
+
+<Warning>
+  **Cannot delete company** if GL Entries or Stock Ledger Entries exist. All transactions must be cancelled first.
+</Warning>
+
+<Note>
+  All default accounts must belong to the company and cannot be group accounts or disabled accounts (`company.py:243-293`).
+</Note>
+
+## Advanced Settings
+
+### Exchange Rate Revaluation
+
+- **Auto Exchange Rate Revaluation**: Automatically revalue foreign currency accounts
+- **Auto ERR Frequency**: Set frequency (Daily, Weekly, Monthly)
+- **Submit ERR Journal Voucher**: Auto-submit revaluation entries
+
+### Account Freezing
+
+```python
+# Prevent backdated entries
+accounts_frozen_till_date = "2024-03-31"
+role_allowed_for_frozen_entries = "Accounts Manager"
+```
+
+Set **Accounts Frozen Till Date** to prevent users from creating or modifying transactions before that date. Specify a role that can bypass this restriction.
+
+## API Reference
+
+### Create Company Programmatically
+
+```python
+import frappe
+
+company = frappe.get_doc({
+    "doctype": "Company",
+    "company_name": "My Company",
+    "abbr": "MC",
+    "country": "United States",
+    "default_currency": "USD",
+    "create_chart_of_accounts_based_on": "Standard Template",
+    "chart_of_accounts": "Standard",
+    "enable_perpetual_inventory": 1
+})
+company.insert()
+```
+
+### Create Tax Templates
+
+```python
+# From company.py:239-241
+company.create_default_tax_template()
+```
+
+This method sets up country-specific tax templates based on the company's country setting.
+
+## Related Documentation
+
+- [User Management](/setup/users)
+- [Global Settings](/setup/settings)
+- [System Customization](/setup/customization)

@@ -1,97 +1,171 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "ERPNext Documentation"
+description: "Free and open-source Enterprise Resource Planning system to help businesses manage operations, finances, inventory, manufacturing, and more."
 ---
 
-## Setting up
+<div style={{
+  background: 'linear-gradient(135deg, #141414 0%, #2F2F2F 100%)',
+  borderRadius: '0px',
+  padding: '3rem 2rem',
+  marginBottom: '2rem',
+  color: '#ffffff'
+}}>
+  <h1 style={{
+    fontFamily: 'Georgia',
+    fontSize: '40px',
+    fontWeight: '700',
+    color: '#ffffff',
+    marginBottom: '1rem'
+  }}>
+    Welcome to ERPNext
+  </h1>
+  <p style={{
+    fontFamily: 'Inter',
+    fontSize: '18px',
+    color: '#c8c8c8',
+    maxWidth: '700px',
+    marginBottom: '2rem'
+  }}>
+    100% open-source ERP system to manage your entire business. From accounting and inventory to manufacturing and CRM, ERPNext does it all.
+  </p>
+  <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+    <a href="/quickstart" style={{
+      background: '#000000',
+      color: '#ffffff',
+      padding: '12px 24px',
+      borderRadius: '4px',
+      textDecoration: 'none',
+      fontFamily: 'Inter',
+      fontWeight: '500'
+    }}>
+      Get Started
+    </a>
+    <a href="/installation" style={{
+      background: 'transparent',
+      color: '#ffffff',
+      padding: '12px 24px',
+      borderRadius: '4px',
+      border: '1px solid #ffffff',
+      textDecoration: 'none',
+      fontFamily: 'Inter',
+      fontWeight: '500'
+    }}>
+      Installation Guide
+    </a>
+  </div>
+</div>
 
-Get your documentation site up and running in minutes.
+## Core Modules
 
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
+ERPNext provides comprehensive modules to manage every aspect of your business.
 
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
+<CardGroup cols={3}>
   <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
+    title="Accounting"
+    icon="calculator"
+    href="/modules/accounting"
   >
-    Edit your docs locally and preview them in real time.
+    Complete financial accounting and reporting tools
   </Card>
   <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
+    title="Inventory & Stock"
+    icon="boxes-stacked"
+    href="/modules/stock"
   >
-    Customize the design and colors of your site to match your brand.
-  </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+    Track inventory levels and manage warehouses
   </Card>
   <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
+    title="Manufacturing"
+    icon="industry"
+    href="/modules/manufacturing"
   >
-    Auto-generate API documentation from OpenAPI specifications.
-  </Card>
-</Columns>
-
-## Create beautiful pages
-
-Everything you need to create world-class documentation.
-
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
+    Manage production cycles and bill of materials
   </Card>
   <Card
-    title="Code samples"
+    title="Buying"
+    icon="cart-shopping"
+    href="/modules/buying"
+  >
+    Purchase order management and supplier tracking
+  </Card>
+  <Card
+    title="Selling"
+    icon="handshake"
+    href="/modules/selling"
+  >
+    Sales orders, quotations, and customer management
+  </Card>
+  <Card
+    title="CRM"
+    icon="users"
+    href="/modules/crm"
+  >
+    Lead management and customer relationships
+  </Card>
+  <Card
+    title="Projects"
+    icon="list-check"
+    href="/modules/projects"
+  >
+    Project tracking and task management
+  </Card>
+  <Card
+    title="Assets"
+    icon="building"
+    href="/modules/assets"
+  >
+    Asset lifecycle and maintenance management
+  </Card>
+  <Card
+    title="Support"
+    icon="headset"
+    href="/modules/support"
+  >
+    Customer support and issue tracking
+  </Card>
+</CardGroup>
+
+## Quick Links
+
+<CardGroup cols={2}>
+  <Card
+    title="API Reference"
     icon="code"
-    href="/essentials/code"
+    href="/api/overview"
   >
-    Add sample code to demonstrate how to use your product.
+    Explore the complete API documentation for developers
   </Card>
   <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
+    title="Developer Guide"
+    icon="wrench"
+    href="/developers/architecture"
   >
-    Display images and other media.
+    Learn how to customize and extend ERPNext
   </Card>
   <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
+    title="Setup & Configuration"
+    icon="gear"
+    href="/setup/company"
   >
-    Write once and reuse across your docs.
+    Configure your ERPNext instance for your business
   </Card>
-</Columns>
+  <Card
+    title="Features"
+    icon="sparkles"
+    href="/features/reporting"
+  >
+    Discover advanced features and integrations
+  </Card>
+</CardGroup>
 
-## Need inspiration?
+## Why ERPNext?
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+<Note>
+ERPNext is built on the Frappe Framework and is used by thousands of companies worldwide to manage their operations efficiently.
+</Note>
+
+- **100% Open Source** - Full access to source code under GPL-3.0 license
+- **Comprehensive** - All business functions in one integrated system
+- **Customizable** - Extend and modify to fit your specific needs
+- **Multi-currency** - Support for international operations
+- **Cloud or Self-hosted** - Deploy anywhere you want

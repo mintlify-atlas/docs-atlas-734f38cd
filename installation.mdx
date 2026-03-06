@@ -1,0 +1,781 @@
+---
+title: Installation Guide
+description: Complete guide to installing ERPNext for development and production environments
+---
+
+# Installation Guide
+
+This comprehensive guide covers different installation methods for ERPNext, from quick Docker setups to production-ready deployments.
+
+<Note>
+  ERPNext requires **Python >= 3.14** and **Frappe Framework >= 17.0.0**. Make sure your system meets these requirements.
+</Note>
+
+## Installation Methods
+
+Choose the installation method that best fits your needs:
+
+<CardGroup cols={3}>
+  <Card title="Docker" icon="docker">
+    **Best for**: Quick testing, local development
+    
+    **Time**: 5 minutes
+    
+    **Difficulty**: Easy
+  </Card>
+  
+  <Card title="Managed Hosting" icon="cloud">
+    **Best for**: Production without infrastructure management
+    
+    **Time**: Instant
+    
+    **Difficulty**: None
+  </Card>
+  
+  <Card title="Self-Hosted" icon="server">
+    **Best for**: Production with full control
+    
+    **Time**: 30-60 minutes
+    
+    **Difficulty**: Advanced
+  </Card>
+</CardGroup>
+
+---
+
+## Docker Installation
+
+Docker provides the fastest way to get ERPNext running with minimal configuration.
+
+### Prerequisites
+
+```bash
+# Check Docker version (20.10+ required)
+docker --version
+
+# Check Docker Compose version (2.0+ required)
+docker compose version
+
+# Check Git installation
+git --version
+```
+
+<Warning>
+  Docker Desktop must be running before proceeding. On Linux, ensure Docker service is active:
+  ```bash
+  sudo systemctl status docker
+  ```
+</Warning>
+
+### Standard Docker Setup
+
+<Steps>
+  <Step title="Clone Frappe Docker Repository">
+    ```bash
+    git clone https://github.com/frappe/frappe_docker
+    cd frappe_docker
+    ```
+  </Step>
+  
+  <Step title="Launch Services">
+    Use the provided compose file for a complete setup:
+    
+    ```bash
+    docker compose -f pwd.yml up -d
+    ```
+    
+    This starts:
+    - **MariaDB**: Database server
+    - **Redis**: Cache and queue
+    - **ERPNext**: Application server
+    - **Nginx**: Web server
+    - **Socketio**: Real-time communication
+  </Step>
+  
+  <Step title="Wait for Initialization">
+    Monitor the setup process:
+    
+    ```bash
+    docker compose -f pwd.yml logs -f
+    ```
+    
+    Wait for: `"Frappe site created successfully"`
+  </Step>
+  
+  <Step title="Access ERPNext">
+    Open browser to `http://localhost:8080`
+    
+    **Default Credentials**:
+    - Username: `Administrator`
+    - Password: `admin`
+  </Step>
+</Steps>
+
+### ARM Architecture (Apple Silicon, ARM servers)
+
+For ARM-based systems (M1/M2 Macs, ARM servers):
+
+```bash
+# Clone repository
+git clone https://github.com/frappe/frappe_docker
+cd frappe_docker
+
+# Use ARM-specific images
+export DOCKER_DEFAULT_PLATFORM=linux/arm64
+
+# Build images for ARM
+docker compose -f pwd.yml build
+
+# Start services
+docker compose -f pwd.yml up -d
+```
+
+<Note>
+  See the [Frappe Docker ARM documentation](https://github.com/frappe/frappe_docker#to-run-on-arm64-architecture-follow-this-instructions) for detailed ARM setup instructions.
+</Note>
+
+### Docker Configuration Options
+
+<CodeGroup>
+```yaml Custom Ports
+# Create docker-compose.override.yml
+services:
+  frontend:
+    ports:
+      - "8000:8080"  # Change to port 8000
+```
+
+```yaml Environment Variables
+services:
+  backend:
+    environment:
+      - MARIADB_ROOT_PASSWORD=custom_password
+      - LETSENCRYPT_EMAIL=admin@example.com
+```
+
+```yaml Volume Mapping
+services:
+  backend:
+    volumes:
+      - ./custom_apps:/home/frappe/frappe-bench/apps
+      - ./sites:/home/frappe/frappe-bench/sites
+```
+</CodeGroup>
+
+---
+
+## Managed Hosting (Frappe Cloud)
+
+The simplest production option with zero infrastructure management.
+
+### Features
+
+- **One-Click Deployment**: Launch ERPNext in minutes
+- **Automatic Updates**: Patches and upgrades handled automatically
+- **Built-in Backups**: Daily backups with point-in-time recovery
+- **Monitoring**: 24/7 uptime monitoring and alerts
+- **SSL Certificates**: Automatic HTTPS with Let's Encrypt
+- **Developer Tools**: Git integration, staging sites, CI/CD
+
+### Getting Started
+
+<Steps>
+  <Step title="Create Account">
+    Visit [Frappe Cloud](https://frappecloud.com) and sign up
+  </Step>
+  
+  <Step title="Create Site">
+    - Choose region (US, EU, Asia, etc.)
+    - Select ERPNext version
+    - Pick a subdomain (e.g., `yourcompany.frappe.cloud`)
+  </Step>
+  
+  <Step title="Configure and Deploy">
+    Site is ready in 2-3 minutes with:
+    - SSL certificate
+    - Database backups
+    - Email configuration
+  </Step>
+</Steps>
+
+<Card title="Try Frappe Cloud" icon="rocket" href="https://frappecloud.com">
+  Free trial available. Open-source platform maintained by the ERPNext team.
+</Card>
+
+---
+
+## Self-Hosted Installation
+
+For production deployments with full control over your infrastructure.
+
+### System Requirements
+
+**Minimum**:
+- **OS**: Ubuntu 22.04 LTS, Debian 11+, or CentOS 8+
+- **RAM**: 4GB (8GB recommended for production)
+- **CPU**: 2 cores (4+ for production)
+- **Disk**: 40GB SSD
+- **Python**: 3.14+
+- **Database**: MariaDB 10.6+ or PostgreSQL 12+
+- **Node.js**: 18.x LTS
+- **Redis**: 6.x+
+
+**Recommended Production**:
+- **RAM**: 16GB+
+- **CPU**: 4-8 cores
+- **Disk**: 100GB+ SSD (more for file attachments)
+- **Separate database server** for larger deployments
+
+### Using Bench (Recommended)
+
+[Bench](https://github.com/frappe/bench) is the official CLI tool for managing Frappe/ERPNext installations.
+
+<Steps>
+  <Step title="Install System Dependencies">
+    On Ubuntu 22.04:
+    
+    ```bash
+    # Update system
+    sudo apt-get update
+    sudo apt-get upgrade -y
+    
+    # Install dependencies
+    sudo apt-get install -y \
+      python3.14 python3.14-dev python3.14-venv \
+      python3-pip python3-setuptools \
+      mariadb-server mariadb-client \
+      redis-server \
+      nginx \
+      git \
+      supervisor \
+      libmariadb-dev \
+      libpq-dev \
+      curl
+    
+    # Install Node.js
+    curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+    sudo apt-get install -y nodejs
+    
+    # Install Yarn
+    sudo npm install -g yarn
+    ```
+  </Step>
+  
+  <Step title="Configure MariaDB">
+    Create configuration file `/etc/mysql/mariadb.conf.d/50-server.cnf`:
+    
+    ```ini
+    [mysqld]
+    character-set-client-handshake = FALSE
+    character-set-server = utf8mb4
+    collation-server = utf8mb4_unicode_ci
+    max_allowed_packet = 256M
+    
+    [mysql]
+    default-character-set = utf8mb4
+    ```
+    
+    Restart MariaDB:
+    ```bash
+    sudo systemctl restart mariadb
+    ```
+    
+    Secure installation:
+    ```bash
+    sudo mysql_secure_installation
+    ```
+  </Step>
+  
+  <Step title="Install Bench CLI">
+    ```bash
+    # Install bench using pip
+    sudo pip3 install frappe-bench
+    
+    # Verify installation
+    bench --version
+    ```
+  </Step>
+  
+  <Step title="Initialize Frappe Bench">
+    Create a new bench installation:
+    
+    ```bash
+    # Create bench directory
+    bench init frappe-bench --frappe-branch version-17
+    
+    cd frappe-bench
+    ```
+    
+    This creates the bench directory structure:
+    ```
+    frappe-bench/
+    ├── apps/          # Frappe applications
+    ├── sites/         # Site directories
+    ├── config/        # Configuration files
+    ├── logs/          # Log files
+    └── env/           # Python virtual environment
+    ```
+  </Step>
+  
+  <Step title="Create a New Site">
+    ```bash
+    # Create site (replace with your domain)
+    bench new-site erp.example.com \
+      --admin-password 'SecurePassword123' \
+      --mariadb-root-password 'YourMariaDBPassword'
+    ```
+    
+    <Warning>
+      Store the admin password securely. This is your ERPNext administrator account.
+    </Warning>
+  </Step>
+  
+  <Step title="Install ERPNext App">
+    ```bash
+    # Download ERPNext
+    bench get-app erpnext --branch version-17
+    
+    # Install on site
+    bench --site erp.example.com install-app erpnext
+    ```
+    
+    Installation takes 5-10 minutes and sets up:
+    - Database schema
+    - Default DocTypes
+    - Module structure
+    - Default workflows
+  </Step>
+  
+  <Step title="Start Development Server">
+    ```bash
+    # Start bench for development
+    bench start
+    ```
+    
+    Access at `http://localhost:8000`
+  </Step>
+</Steps>
+
+### Production Setup with Bench
+
+For production environments, configure Nginx, Supervisor, and SSL:
+
+<Steps>
+  <Step title="Setup Production Config">
+    ```bash
+    # Configure production settings
+    bench setup production [your-user]
+    
+    # This configures:
+    # - Nginx as reverse proxy
+    # - Supervisor for process management
+    # - Redis for caching
+    # - Fail2ban for security
+    ```
+  </Step>
+  
+  <Step title="Enable Site">
+    ```bash
+    # Enable site in production
+    bench --site erp.example.com enable-scheduler
+    bench --site erp.example.com set-maintenance-mode off
+    ```
+  </Step>
+  
+  <Step title="Setup SSL Certificate">
+    Using Let's Encrypt:
+    
+    ```bash
+    # Install certbot
+    sudo apt-get install certbot python3-certbot-nginx
+    
+    # Setup SSL
+    sudo bench setup lets-encrypt erp.example.com \
+      --custom-domain erp.example.com \
+      --email admin@example.com
+    ```
+  </Step>
+  
+  <Step title="Configure Firewall">
+    ```bash
+    # Allow HTTP and HTTPS
+    sudo ufw allow 80/tcp
+    sudo ufw allow 443/tcp
+    sudo ufw enable
+    ```
+  </Step>
+</Steps>
+
+### Manual Configuration (Advanced)
+
+For custom setups without using bench setup scripts:
+
+<CodeGroup>
+```nginx Nginx Configuration
+# /etc/nginx/sites-available/erp.example.com
+upstream frappe-bench {
+    server 127.0.0.1:8000 fail_timeout=0;
+}
+
+server {
+    listen 80;
+    server_name erp.example.com;
+    
+    root /home/frappe/frappe-bench/sites;
+    
+    location / {
+        proxy_pass http://frappe-bench;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+    
+    location /assets {
+        try_files $uri =404;
+    }
+    
+    location /files {
+        try_files $uri =404;
+    }
+}
+```
+
+```ini Supervisor Configuration
+# /etc/supervisor/conf.d/frappe-bench.conf
+[program:frappe-bench-web]
+command=/home/frappe/frappe-bench/env/bin/gunicorn -b 127.0.0.1:8000 -w 4 --timeout 120 frappe.app:application --preload
+directory=/home/frappe/frappe-bench/sites
+user=frappe
+autostart=true
+autorestart=true
+redirect_stderr=true
+stdout_logfile=/home/frappe/frappe-bench/logs/web.log
+
+[program:frappe-bench-schedule]
+command=/home/frappe/frappe-bench/env/bin/python -m frappe.utils.scheduler
+directory=/home/frappe/frappe-bench/sites
+user=frappe
+autostart=true
+autorestart=true
+
+[program:frappe-bench-worker-default]
+command=/home/frappe/frappe-bench/env/bin/bench worker --queue default
+directory=/home/frappe/frappe-bench/sites
+user=frappe
+autostart=true
+autorestart=true
+```
+
+```yaml Redis Configuration
+# Additional Redis instances for queue and cache
+# /etc/redis/redis-cache.conf
+port 13000
+bind 127.0.0.1
+maxmemory 512mb
+maxmemory-policy allkeys-lru
+
+# /etc/redis/redis-queue.conf
+port 11000
+bind 127.0.0.1
+```
+</CodeGroup>
+
+---
+
+## Development Setup
+
+For contributing to ERPNext or developing custom apps.
+
+### Local Development Environment
+
+<Steps>
+  <Step title="Install Frappe Framework">
+    ```bash
+    # Initialize bench
+    bench init frappe-bench --frappe-branch develop
+    cd frappe-bench
+    
+    # Create development site
+    bench new-site dev.localhost
+    bench use dev.localhost
+    ```
+  </Step>
+  
+  <Step title="Get ERPNext Source">
+    ```bash
+    # Clone ERPNext
+    bench get-app https://github.com/frappe/erpnext --branch develop
+    
+    # Install on site
+    bench --site dev.localhost install-app erpnext
+    ```
+  </Step>
+  
+  <Step title="Enable Developer Mode">
+    ```bash
+    # Enable developer mode
+    bench --site dev.localhost set-config developer_mode 1
+    
+    # Clear cache
+    bench --site dev.localhost clear-cache
+    ```
+  </Step>
+  
+  <Step title="Start Development Server">
+    ```bash
+    # Start bench with auto-reload
+    bench start
+    ```
+    
+    Access at: `http://dev.localhost:8000`
+  </Step>
+</Steps>
+
+### Developer Tools
+
+```bash
+# Watch for file changes and rebuild
+bench watch
+
+# Run tests
+bench --site dev.localhost run-tests --app erpnext
+
+# Access Python console
+bench --site dev.localhost console
+
+# Execute SQL queries
+bench --site dev.localhost mariadb
+
+# Rebuild search index
+bench --site dev.localhost rebuild-search-index
+```
+
+### Creating Custom Apps
+
+```bash
+# Create new custom app
+bench new-app custom_app
+
+# Install on site
+bench --site dev.localhost install-app custom_app
+
+# Directory structure
+custom_app/
+├── custom_app/
+│   ├── config/
+│   ├── public/
+│   ├── templates/
+│   └── www/
+├── hooks.py
+└── setup.py
+```
+
+---
+
+## Post-Installation
+
+### Essential Configuration
+
+<Steps>
+  <Step title="Configure Email">
+    **Settings → Email Domain**
+    
+    Set up SMTP for sending emails:
+    - Email server
+    - Port (587 for TLS)
+    - Authentication credentials
+    - Enable SSL/TLS
+  </Step>
+  
+  <Step title="Setup Backups">
+    ```bash
+    # Configure automatic backups
+    bench --site erp.example.com set-config \
+      backup_frequency 'daily'
+    
+    # Manual backup
+    bench --site erp.example.com backup \
+      --with-files
+    ```
+  </Step>
+  
+  <Step title="Configure Print Settings">
+    **Settings → Print Settings**
+    
+    - Add company letterhead
+    - Set default print format
+    - Configure PDF settings
+  </Step>
+  
+  <Step title="System Settings">
+    **Settings → System Settings**
+    
+    - Enable/disable modules
+    - Set backup settings
+    - Configure session timeout
+    - Setup two-factor authentication
+  </Step>
+</Steps>
+
+### Performance Optimization
+
+```bash
+# Enable Redis cache
+bench --site erp.example.com set-config \
+  enable_realtime_updates 1
+
+# Configure worker count (adjust for CPU cores)
+bench setup supervisor --workers 4
+
+# Enable gunicorn preload
+bench setup supervisor --preload
+
+# Restart services
+sudo supervisorctl restart all
+```
+
+---
+
+## Maintenance
+
+### Updates and Upgrades
+
+<CodeGroup>
+```bash Update to Latest Patch
+# Pull latest changes
+cd frappe-bench
+bench update --patch
+
+# This updates:
+# - Frappe framework
+# - ERPNext app
+# - Other installed apps
+```
+
+```bash Upgrade to New Version
+# Switch to new version branch
+bench switch-to-branch version-17 frappe erpnext
+
+# Migrate database
+bench --site all migrate
+
+# Rebuild assets
+bench build
+
+# Restart services
+sudo supervisorctl restart all
+```
+
+```bash Backup Before Update
+# Always backup before major updates
+bench --site erp.example.com backup \
+  --with-files \
+  --backup-path /backup/location
+```
+</CodeGroup>
+
+### Monitoring
+
+```bash
+# View active workers
+bench doctor
+
+# Check site status
+bench --site erp.example.com migrate-status
+
+# Monitor logs
+tail -f ~/frappe-bench/logs/*.log
+
+# Check background jobs
+bench --site erp.example.com show-pending-jobs
+```
+
+---
+
+## Troubleshooting
+
+<Warning>
+  **Common Installation Issues**
+</Warning>
+
+### Database Connection Issues
+
+```bash
+# Check MariaDB status
+sudo systemctl status mariadb
+
+# Test database connection
+mysql -u root -p
+
+# Grant permissions
+GRANT ALL PRIVILEGES ON *.* TO 'frappe'@'localhost' 
+IDENTIFIED BY 'password' WITH GRANT OPTION;
+FLUSH PRIVILEGES;
+```
+
+### Permission Issues
+
+```bash
+# Fix file permissions
+cd ~/frappe-bench
+sudo chown -R $USER:$USER .
+sudo chmod -R 755 .
+
+# Fix log directories
+sudo chown -R $USER:$USER logs/
+```
+
+### Port Conflicts
+
+```bash
+# Check what's using port 8000
+sudo lsof -i :8000
+
+# Kill process if needed
+sudo kill -9 <PID>
+
+# Change bench port
+bench set-config http_port 9000
+```
+
+### Clear Cache
+
+```bash
+# Clear site cache
+bench --site erp.example.com clear-cache
+
+# Clear Redis
+redis-cli FLUSHALL
+
+# Rebuild
+bench build
+```
+
+---
+
+## Additional Resources
+
+<CardGroup cols={2}>
+  <Card title="Bench Documentation" icon="terminal" href="https://frappeframework.com/docs/user/en/bench">
+    Complete guide to bench commands and configuration
+  </Card>
+  
+  <Card title="Frappe Docker" icon="docker" href="https://github.com/frappe/frappe_docker">
+    Docker images and compose files for containerized deployments
+  </Card>
+  
+  <Card title="Installation Forum" icon="comments" href="https://discuss.frappe.io/c/erpnext/installation/25">
+    Get help with installation issues from the community
+  </Card>
+  
+  <Card title="System Administration" icon="gear" href="https://frappeframework.com/docs/user/en/system-administration">
+    Learn about maintaining and optimizing your installation
+  </Card>
+</CardGroup>
+
+<Note>
+  **Need Professional Help?**
+  
+  Consider hiring a [Frappe Partner](https://frappe.io/partners) for production setup, migration, or custom development.
+</Note>

@@ -1,0 +1,483 @@
+---
+title: Manufacturing API
+description: API functions for ERPNext Manufacturing module including work orders, BOM, and production operations
+---
+
+# Manufacturing Module API
+
+The Manufacturing module provides APIs for production planning, bill of materials (BOM) management, work orders, and job cards.
+
+## Work Order APIs
+
+### make_stock_entry
+
+Create stock entries for work orders to record material consumption or finished goods.
+
+<CodeGroup>
+```python Python
+import frappe
+
+# Create material transfer for work order
+stock_entry = frappe.call(
+    "erpnext.manufacturing.doctype.work_order.work_order.make_stock_entry",
+    work_order_id="MFG-WO-2024-00001",
+    purpose="Material Transfer for Manufacture",
+    qty=10
+)
+```
+
+```javascript JavaScript
+frappe.call({
+    method: "erpnext.manufacturing.doctype.work_order.work_order.make_stock_entry",
+    args: {
+        work_order_id: "MFG-WO-2024-00001",
+        purpose: "Material Transfer for Manufacture",
+        qty: 10
+    },
+    callback: function(r) {
+        console.log(r.message);
+    }
+});
+```
+</CodeGroup>
+
+<ParamField path="work_order_id" type="string" required>
+  Work Order ID/name
+</ParamField>
+
+<ParamField path="purpose" type="string" required>
+  Purpose: "Material Transfer for Manufacture", "Material Consumption for Manufacture", or "Manufacture"
+</ParamField>
+
+<ParamField path="qty" type="float" default="null">
+  Quantity for the stock entry (defaults to work order quantity)
+</ParamField>
+
+<ResponseField name="stock_entry" type="Document">
+  Stock Entry document with pre-filled items from work order
+  <Accordion title="Response Properties">
+    - `stock_entry_type`: Type of entry
+    - `purpose`: Entry purpose
+    - `work_order`: Reference to work order
+    - `from_bom`: Whether items are from BOM
+    - `bom_no`: BOM reference
+    - `fg_completed_qty`: Finished goods quantity
+    - `items`: List of items with quantities and warehouses
+  </Accordion>
+</ResponseField>
+
+---
+
+## Bill of Materials (BOM) APIs
+
+### get_bom_items
+
+Retrieve all items from a BOM including sub-assemblies.
+
+```python
+items = frappe.call(
+    "erpnext.manufacturing.doctype.bom.bom.get_bom_items",
+    bom="BOM-LAPTOP-001",
+    company="Company A",
+    qty=1,
+    fetch_exploded=1
+)
+```
+
+<ParamField path="bom" type="string" required>
+  BOM name/ID
+</ParamField>
+
+<ParamField path="company" type="string" required>
+  Company name
+</ParamField>
+
+<ParamField path="qty" type="float" default="1">
+  Quantity multiplier for calculating required materials
+</ParamField>
+
+<ParamField path="fetch_exploded" type="int" default="1">
+  Whether to explode sub-assemblies (1) or show as-is (0)
+</ParamField>
+
+<ResponseField name="items" type="list">
+  List of BOM items
+  <Accordion title="Item Properties">
+    - `item_code`: Item code
+    - `item_name`: Item name
+    - `qty`: Required quantity
+    - `rate`: Item rate
+    - `amount`: Total amount
+    - `stock_uom`: Stock UOM
+    - `source_warehouse`: Default source warehouse
+    - `description`: Item description
+  </Accordion>
+</ResponseField>
+
+---
+
+### get_children
+
+Get child items in BOM tree structure for hierarchical display.
+
+```python
+children = frappe.call(
+    "erpnext.manufacturing.doctype.bom.bom.get_children",
+    parent="BOM-LAPTOP-001",
+    is_root=False
+)
+```
+
+<ParamField path="parent" type="string" default="null">
+  Parent BOM name (null for root level)
+</ParamField>
+
+<ParamField path="is_root" type="bool" default="false">
+  Whether fetching root level items
+</ParamField>
+
+<ResponseField name="children" type="list">
+  List of child items with tree structure information
+</ResponseField>
+
+---
+
+### get_bom_diff
+
+Compare two BOMs and get differences.
+
+```python
+diff = frappe.call(
+    "erpnext.manufacturing.doctype.bom.bom.get_bom_diff",
+    bom1="BOM-LAPTOP-001",
+    bom2="BOM-LAPTOP-002"
+)
+```
+
+<ParamField path="bom1" type="string" required>
+  First BOM name
+</ParamField>
+
+<ParamField path="bom2" type="string" required>
+  Second BOM name
+</ParamField>
+
+<ResponseField name="diff" type="dict">
+  Dictionary containing added, removed, and changed items
+</ResponseField>
+
+---
+
+## Job Card APIs
+
+### make_stock_entry (Job Card)
+
+Create stock entry from job card for semi-finished or finished goods.
+
+```python
+stock_entry = frappe.call(
+    "erpnext.manufacturing.doctype.job_card.job_card.make_stock_entry",
+    source_name="JOB-CARD-00001"
+)
+```
+
+<ParamField path="source_name" type="string" required>
+  Job Card ID
+</ParamField>
+
+<ParamField path="target_doc" type="Document" default="null">
+  Existing stock entry document to update
+</ParamField>
+
+<ResponseField name="stock_entry" type="Document">
+  Stock Entry document mapped from job card
+</ResponseField>
+
+---
+
+## BOM Operations
+
+### update_cost
+
+Update BOM costs based on current rates.
+
+```python
+bom = frappe.get_doc("BOM", "BOM-LAPTOP-001")
+bom.update_cost(
+    update_parent=True,
+    from_child_bom=False,
+    update_hour_rate=True,
+    save=True
+)
+```
+
+<ParamField path="update_parent" type="bool" default="true">
+  Update parent BOM costs
+</ParamField>
+
+<ParamField path="from_child_bom" type="bool" default="false">
+  Whether update is triggered from child BOM
+</ParamField>
+
+<ParamField path="update_hour_rate" type="bool" default="false">
+  Update operation hour rates
+</ParamField>
+
+<ParamField path="save" type="bool" default="true">
+  Save the document after updating
+</ParamField>
+
+<ResponseField name="result" type="null">
+  Updates BOM costs in place
+</ResponseField>
+
+---
+
+### get_bom_material_detail
+
+Get material details for adding items to BOM.
+
+```python
+bom = frappe.get_doc("BOM", "BOM-LAPTOP-001")
+details = bom.get_bom_material_detail(
+    args={
+        "item_code": "CPU-INTEL-I7",
+        "bom_no": "BOM-LAPTOP-001",
+        "qty": 1
+    }
+)
+```
+
+<ParamField path="args" type="dict" required>
+  Dictionary with item_code, bom_no, and qty
+</ParamField>
+
+<ResponseField name="details" type="dict">
+  Material details including rate, UOM, and description
+</ResponseField>
+
+---
+
+## Blanket Order APIs
+
+### make_order
+
+Create sales or purchase order from blanket order.
+
+```python
+order = frappe.call(
+    "erpnext.manufacturing.doctype.blanket_order.blanket_order.make_order",
+    source_name="BLK-ORD-00001"
+)
+```
+
+<ParamField path="source_name" type="string" required>
+  Blanket Order ID
+</ParamField>
+
+<ResponseField name="order" type="Document">
+  Sales Order or Purchase Order document
+</ResponseField>
+
+---
+
+## Usage Examples
+
+### Creating Work Order and Material Transfer
+
+```python
+import frappe
+
+# Create work order
+work_order = frappe.get_doc({
+    "doctype": "Work Order",
+    "production_item": "LAPTOP-001",
+    "bom_no": "BOM-LAPTOP-001",
+    "qty": 10,
+    "company": "Manufacturing Inc",
+    "wip_warehouse": "Work In Progress - MI",
+    "fg_warehouse": "Finished Goods - MI",
+    "source_warehouse": "Stores - MI"
+})
+work_order.insert()
+work_order.submit()
+
+# Create material transfer
+stock_entry = frappe.call(
+    "erpnext.manufacturing.doctype.work_order.work_order.make_stock_entry",
+    work_order_id=work_order.name,
+    purpose="Material Transfer for Manufacture"
+)
+
+# Save and submit
+se_doc = frappe.get_doc(stock_entry)
+se_doc.insert()
+se_doc.submit()
+
+print(f"Material transferred: {se_doc.name}")
+```
+
+### Getting BOM Details and Costs
+
+```python
+import frappe
+
+# Get BOM items
+items = frappe.call(
+    "erpnext.manufacturing.doctype.bom.bom.get_bom_items",
+    bom="BOM-LAPTOP-001",
+    company="Manufacturing Inc",
+    qty=100,  # For 100 laptops
+    fetch_exploded=1  # Get all sub-assembly items
+)
+
+total_cost = 0
+for item in items:
+    print(f"Item: {item['item_code']}, Qty: {item['qty']}, Amount: {item['amount']}")
+    total_cost += item['amount']
+
+print(f"Total Material Cost for 100 units: {total_cost}")
+```
+
+### Managing BOM Hierarchy
+
+```python
+import frappe
+
+# Get root level items
+root_items = frappe.call(
+    "erpnext.manufacturing.doctype.bom.bom.get_children",
+    parent=None,
+    is_root=True
+)
+
+# Get children of specific BOM
+children = frappe.call(
+    "erpnext.manufacturing.doctype.bom.bom.get_children",
+    parent="BOM-LAPTOP-001",
+    is_root=False
+)
+
+for child in children:
+    print(f"Child Item: {child.get('value')} (Expandable: {child.get('expandable')})")
+```
+
+### Comparing BOMs
+
+```python
+import frappe
+
+# Compare two BOM versions
+diff = frappe.call(
+    "erpnext.manufacturing.doctype.bom.bom.get_bom_diff",
+    bom1="BOM-LAPTOP-001",
+    bom2="BOM-LAPTOP-002"
+)
+
+print("Added Items:", diff.get('added', []))
+print("Removed Items:", diff.get('removed', []))
+print("Changed Items:", diff.get('changed', []))
+```
+
+### Recording Production with Stock Entry
+
+```python
+import frappe
+
+# Create manufacture entry (finish production)
+stock_entry = frappe.call(
+    "erpnext.manufacturing.doctype.work_order.work_order.make_stock_entry",
+    work_order_id="MFG-WO-2024-00001",
+    purpose="Manufacture",
+    qty=10  # Finished 10 units
+)
+
+se_doc = frappe.get_doc(stock_entry)
+
+# Modify if needed
+se_doc.posting_date = "2024-03-15"
+
+# Submit
+se_doc.insert()
+se_doc.submit()
+
+print(f"Production recorded: {se_doc.name}")
+print(f"Finished Goods: {se_doc.fg_completed_qty} units")
+```
+
+### Updating BOM Costs
+
+```python
+import frappe
+
+# Get BOM and update costs
+bom = frappe.get_doc("BOM", "BOM-LAPTOP-001")
+
+# Update based on latest item rates
+bom.update_cost(
+    update_parent=True,
+    from_child_bom=False,
+    update_hour_rate=True,
+    save=True
+)
+
+print(f"Updated BOM Cost: {bom.total_cost}")
+print(f"Operating Cost: {bom.operating_cost}")
+print(f"Raw Material Cost: {bom.raw_material_cost}")
+```
+
+---
+
+## Advanced Operations
+
+### Creating Multi-level BOM
+
+```python
+import frappe
+
+# Create sub-assembly BOM
+sub_bom = frappe.get_doc({
+    "doctype": "BOM",
+    "item": "MOTHERBOARD-001",
+    "quantity": 1,
+    "company": "Manufacturing Inc",
+    "items": [
+        {
+            "item_code": "CPU-INTEL-I7",
+            "qty": 1,
+            "rate": 300
+        },
+        {
+            "item_code": "RAM-16GB",
+            "qty": 2,
+            "rate": 50
+        }
+    ]
+})
+sub_bom.insert()
+sub_bom.submit()
+
+# Create main BOM using sub-assembly
+main_bom = frappe.get_doc({
+    "doctype": "BOM",
+    "item": "LAPTOP-001",
+    "quantity": 1,
+    "company": "Manufacturing Inc",
+    "items": [
+        {
+            "item_code": "MOTHERBOARD-001",
+            "qty": 1,
+            "bom_no": sub_bom.name  # Link to sub-assembly BOM
+        },
+        {
+            "item_code": "LCD-SCREEN-15",
+            "qty": 1,
+            "rate": 150
+        }
+    ]
+})
+main_bom.insert()
+main_bom.submit()
+
+print(f"Main BOM: {main_bom.name} with sub-assembly: {sub_bom.name}")
+```

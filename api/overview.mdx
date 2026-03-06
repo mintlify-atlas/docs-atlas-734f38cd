@@ -1,0 +1,364 @@
+---
+title: API Overview
+description: Introduction to the ERPNext REST API and how to integrate with your ERPNext instance
+---
+
+ERPNext provides a comprehensive REST API built on the Frappe Framework that allows you to programmatically interact with your ERP system. You can perform CRUD operations on all DocTypes, execute whitelisted methods, and integrate ERPNext with external applications.
+
+## Base URL
+
+All API requests are made to your ERPNext instance URL:
+
+```
+https://your-instance.erpnext.com
+```
+
+For self-hosted installations:
+
+```
+http://localhost:8000
+```
+
+## API Endpoints Structure
+
+The ERPNext API follows a consistent pattern for accessing resources:
+
+### Resource Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/resource/{doctype}` | GET | Get a list of documents |
+| `/api/resource/{doctype}` | POST | Create a new document |
+| `/api/resource/{doctype}/{name}` | GET | Get a specific document |
+| `/api/resource/{doctype}/{name}` | PUT | Update a document |
+| `/api/resource/{doctype}/{name}` | DELETE | Delete a document |
+
+### Method Endpoints
+
+```
+/api/method/{method_path}
+```
+
+Execute custom whitelisted methods decorated with `@frappe.whitelist()`.
+
+## Common DocTypes
+
+ERPNext includes hundreds of DocTypes. Here are some commonly used ones:
+
+- **Customer** - Customer records
+- **Item** - Product/item master
+- **Sales Order** - Sales order transactions
+- **Purchase Order** - Purchase order transactions
+- **Sales Invoice** - Sales invoices
+- **Purchase Invoice** - Purchase invoices
+- **Delivery Note** - Delivery documents
+- **Stock Entry** - Stock movements
+- **Payment Entry** - Payment records
+- **Journal Entry** - Accounting entries
+
+## Request Format
+
+All requests should include:
+
+- **Content-Type**: `application/json`
+- **Accept**: `application/json`
+- **Authorization**: API Key or Token (see [Authentication](/api/authentication))
+
+## Response Format
+
+API responses are returned in JSON format:
+
+<CodeGroup>
+```json Success Response
+{
+  "message": {
+    "name": "CUST-00001",
+    "customer_name": "John Doe",
+    "customer_type": "Individual",
+    "territory": "United States"
+  }
+}
+```
+
+```json Error Response
+{
+  "exc_type": "ValidationError",
+  "exception": "frappe.exceptions.ValidationError: Customer name is required",
+  "_server_messages": "[\"Customer name is required\"]"
+}
+```
+</CodeGroup>
+
+## Getting a List of Documents
+
+Retrieve multiple documents with filtering, sorting, and pagination:
+
+<CodeGroup>
+```bash cURL
+curl -X GET \
+  'https://your-instance.erpnext.com/api/resource/Customer?fields=["name","customer_name","territory"]&limit_page_length=20' \
+  -H 'Authorization: token api_key:api_secret'
+```
+
+```python Python
+import requests
+
+url = "https://your-instance.erpnext.com/api/resource/Customer"
+headers = {
+    "Authorization": "token api_key:api_secret"
+}
+params = {
+    "fields": '["name", "customer_name", "territory"]',
+    "limit_page_length": 20
+}
+
+response = requests.get(url, headers=headers, params=params)
+data = response.json()
+print(data["data"])
+```
+</CodeGroup>
+
+### Query Parameters
+
+<ParamField query="fields" type="string">
+  JSON array of field names to return. Example: `["name", "customer_name"]`
+</ParamField>
+
+<ParamField query="filters" type="string">
+  JSON array of filters. Example: `[["Customer", "territory", "=", "United States"]]`
+</ParamField>
+
+<ParamField query="limit_page_length" type="integer" default="20">
+  Number of records to return per page
+</ParamField>
+
+<ParamField query="limit_start" type="integer" default="0">
+  Starting index for pagination
+</ParamField>
+
+<ParamField query="order_by" type="string">
+  Field to sort by. Example: `modified desc` or `customer_name asc`
+</ParamField>
+
+## Getting a Single Document
+
+<CodeGroup>
+```bash cURL
+curl -X GET \
+  'https://your-instance.erpnext.com/api/resource/Customer/CUST-00001' \
+  -H 'Authorization: token api_key:api_secret'
+```
+
+```python Python
+import requests
+
+url = "https://your-instance.erpnext.com/api/resource/Customer/CUST-00001"
+headers = {
+    "Authorization": "token api_key:api_secret"
+}
+
+response = requests.get(url, headers=headers)
+customer = response.json()["data"]
+print(customer["customer_name"])
+```
+</CodeGroup>
+
+## Creating a Document
+
+<CodeGroup>
+```bash cURL
+curl -X POST \
+  'https://your-instance.erpnext.com/api/resource/Customer' \
+  -H 'Authorization: token api_key:api_secret' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "customer_name": "Jane Smith",
+    "customer_type": "Individual",
+    "territory": "United States"
+  }'
+```
+
+```python Python
+import requests
+
+url = "https://your-instance.erpnext.com/api/resource/Customer"
+headers = {
+    "Authorization": "token api_key:api_secret",
+    "Content-Type": "application/json"
+}
+data = {
+    "customer_name": "Jane Smith",
+    "customer_type": "Individual",
+    "territory": "United States"
+}
+
+response = requests.post(url, headers=headers, json=data)
+new_customer = response.json()["data"]
+print(f"Created customer: {new_customer['name']}")
+```
+</CodeGroup>
+
+<Note>
+  When creating documents, you only need to provide required fields and any optional fields you want to set. ERPNext will automatically populate default values and generate naming series.
+</Note>
+
+## Updating a Document
+
+<CodeGroup>
+```bash cURL
+curl -X PUT \
+  'https://your-instance.erpnext.com/api/resource/Customer/CUST-00001' \
+  -H 'Authorization: token api_key:api_secret' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "customer_name": "Jane Smith Updated",
+    "mobile_no": "+1-555-0123"
+  }'
+```
+
+```python Python
+import requests
+
+url = "https://your-instance.erpnext.com/api/resource/Customer/CUST-00001"
+headers = {
+    "Authorization": "token api_key:api_secret",
+    "Content-Type": "application/json"
+}
+data = {
+    "customer_name": "Jane Smith Updated",
+    "mobile_no": "+1-555-0123"
+}
+
+response = requests.put(url, headers=headers, json=data)
+updated_customer = response.json()["data"]
+print(f"Updated: {updated_customer['customer_name']}")
+```
+</CodeGroup>
+
+## Deleting a Document
+
+<CodeGroup>
+```bash cURL
+curl -X DELETE \
+  'https://your-instance.erpnext.com/api/resource/Customer/CUST-00001' \
+  -H 'Authorization: token api_key:api_secret'
+```
+
+```python Python
+import requests
+
+url = "https://your-instance.erpnext.com/api/resource/Customer/CUST-00001"
+headers = {
+    "Authorization": "token api_key:api_secret"
+}
+
+response = requests.delete(url, headers=headers)
+if response.status_code == 202:
+    print("Customer deleted successfully")
+```
+</CodeGroup>
+
+<Warning>
+  Deleting documents is permanent. Some documents cannot be deleted if they have dependent transactions. Always check for references before deletion.
+</Warning>
+
+## Calling Custom Methods
+
+ERPNext has many whitelisted methods that provide additional functionality:
+
+<CodeGroup>
+```bash cURL
+curl -X POST \
+  'https://your-instance.erpnext.com/api/method/erpnext.stock.get_item_details.get_item_details' \
+  -H 'Authorization: token api_key:api_secret' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "item_code": "ITEM-001",
+    "warehouse": "Stores - WH",
+    "doctype": "Sales Order"
+  }'
+```
+
+```python Python
+import requests
+
+url = "https://your-instance.erpnext.com/api/method/erpnext.stock.get_item_details.get_item_details"
+headers = {
+    "Authorization": "token api_key:api_secret",
+    "Content-Type": "application/json"
+}
+data = {
+    "item_code": "ITEM-001",
+    "warehouse": "Stores - WH",
+    "doctype": "Sales Order"
+}
+
+response = requests.post(url, headers=headers, json=data)
+item_details = response.json()["message"]
+print(f"Item price: {item_details.get('rate')}")
+```
+</CodeGroup>
+
+<Note>
+  Custom methods decorated with `@frappe.whitelist()` in the codebase are accessible via the API. Check the ERPNext source code to discover available methods.
+</Note>
+
+## File Uploads
+
+Upload files and attach them to documents:
+
+<CodeGroup>
+```python Python
+import requests
+
+url = "https://your-instance.erpnext.com/api/method/upload_file"
+headers = {
+    "Authorization": "token api_key:api_secret"
+}
+
+with open("document.pdf", "rb") as f:
+    files = {"file": f}
+    data = {
+        "doctype": "Customer",
+        "docname": "CUST-00001",
+        "is_private": 1
+    }
+    response = requests.post(url, headers=headers, files=files, data=data)
+    file_doc = response.json()["message"]
+    print(f"File uploaded: {file_doc['file_url']}")
+```
+</CodeGroup>
+
+## Rate Limiting
+
+ERPNext doesn't enforce strict rate limits by default, but it's recommended to:
+
+- Batch requests when possible
+- Implement retry logic with exponential backoff
+- Monitor API usage to avoid overwhelming the server
+- Use webhooks for real-time updates instead of polling
+
+## Error Handling
+
+Common HTTP status codes:
+
+- **200 OK** - Successful GET request
+- **201 Created** - Successful POST request
+- **202 Accepted** - Successful PUT/DELETE request
+- **400 Bad Request** - Invalid request format
+- **401 Unauthorized** - Invalid or missing authentication
+- **403 Forbidden** - Insufficient permissions
+- **404 Not Found** - Resource doesn't exist
+- **417 Expectation Failed** - Validation error
+- **500 Internal Server Error** - Server error
+
+<Note>
+  Always check both the HTTP status code and the response body for detailed error messages. ERPNext provides descriptive error messages in the `exception` and `_server_messages` fields.
+</Note>
+
+## Next Steps
+
+- Learn about [Authentication](/api/authentication) methods
+- Explore the Frappe Framework documentation for advanced features
+- Check the ERPNext source code for available whitelisted methods
+- Join the ERPNext community forum for API support
